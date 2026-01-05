@@ -1,0 +1,157 @@
+node_modules/
+.env
+dist/
+cdk.out/
+.DS_Store
+
+
+# ========================================
+# Dependencies
+# ========================================
+node_modules/
+.pnp
+.pnp.js
+
+# ========================================
+# Environment Variables - NEVER COMMIT!
+# ========================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+!.env.example
+
+# ========================================
+# Next.js (Frontend)
+# ========================================
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.turbo
+.next/
+out/
+build/
+
+# ========================================
+# CDK (Backend Infrastructure)
+# ========================================
+backend/cdk/cdk.out/
+backend/cdk/dist/
+cdk.out/
+
+# ========================================
+# TypeScript Compiled Files
+# ========================================
+*.js
+*.d.ts
+*.js.map
+*.d.ts.map
+
+# BUT keep these JavaScript files:
+!jest.config.js
+!next.config.js
+!postcss.config.js
+!tailwind.config.js
+!eslint.config.mjs
+!backend/cdk/bin/*.js
+!backend/lambda-bundle/*.js
+!build-lambda.js
+
+# ========================================
+# Lambda Functions (Built Code)
+# ========================================
+backend/lambda-bundle/
+backend/dist/
+lambda-bundle/
+
+# ========================================
+# Testing
+# ========================================
+coverage/
+*.lcov
+.nyc_output
+
+# ========================================
+# Logs
+# ========================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# ========================================
+# OS Generated Files
+# ========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+
+# ========================================
+# IDE / Editor Files
+# ========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# ========================================
+# AWS / Serverless
+# ========================================
+.aws-sam/
+samconfig.toml
+.serverless/
+
+# ========================================
+# Certificates & Keys
+# ========================================
+*.pem
+*.key
+*.cert
+*.crt
+
+# ========================================
+# Cache & Temp Files
+# ========================================
+.cache/
+.temp/
+.tmp/
+*.tmp
+
+# ========================================
+# Production Build Artifacts
+# ========================================
+dist/
+build/
+
+# ========================================
+# Package Manager
+# ========================================
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ========================================
+# Misc
+# ========================================
+.turbo
+.vercel
+.eslintcache
