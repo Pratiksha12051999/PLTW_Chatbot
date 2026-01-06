@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Amplify will handle Next.js routing automatically
+  // No special output mode needed
 };
 
 export default nextConfig;
