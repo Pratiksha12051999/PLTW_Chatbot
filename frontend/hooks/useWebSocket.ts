@@ -82,10 +82,21 @@ export const useWebSocket = (url: string) => {
                   if (!msg.timestamp) {
                     msg.timestamp = Date.now();
                   }
-                  console.log('Adding user message:', msg);
-                  setMessages(prev => [...prev, msg]);
+                  console.log('Updating user message with server response:', msg);
+                  // Replace the optimistic message with the real one from server
+                  setMessages(prev => {
+                    // Find and replace the temp message, or add if not found
+                    const tempIndex = prev.findIndex(m => m.messageId.startsWith('temp-') && m.role === 'user');
+                    if (tempIndex !== -1) {
+                      const updated = [...prev];
+                      updated[tempIndex] = msg;
+                      return updated;
+                    }
+                    return [...prev, msg];
+                  });
                   setConversationId(msg.conversationId);
                 }
+                // isTyping is already true from sendMessage, keep it true
                 setIsTyping(true);
                 break;
 
@@ -163,6 +174,19 @@ export const useWebSocket = (url: string) => {
 
   const sendMessage = useCallback((content: string, category: string = 'General', fileIds?: string[]) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      // Immediately show typing indicator to prevent blank screen
+      setIsTyping(true);
+      
+      // Add optimistic user message immediately for instant feedback
+      const optimisticMessage: Message = {
+        messageId: `temp-${Date.now()}`,
+        conversationId: conversationId || 'pending',
+        content,
+        role: 'user',
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, optimisticMessage]);
+      
       const payload: {
         action: string;
         message: string;
@@ -196,6 +220,17 @@ export const useWebSocket = (url: string) => {
     }
   }, [conversationId]);
 
+  /**
+   * Reset the chat state to start a new conversation
+   */
+  const resetChat = useCallback(() => {
+    setMessages([]);
+    setConversationId(null);
+    setIsTyping(false);
+    setShouldEscalate(false);
+    setContactInfo(null);
+  }, []);
+
   return {
     isConnected,
     messages,
@@ -204,6 +239,7 @@ export const useWebSocket = (url: string) => {
     contactInfo,
     conversationId,
     sendMessage,
-    escalate
+    escalate,
+    resetChat
   };
 };

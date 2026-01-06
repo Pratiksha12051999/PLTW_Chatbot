@@ -29,6 +29,54 @@ const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/we
 // PDFs and documents need text extraction
 const DOCUMENT_TYPES_FOR_TEXT_EXTRACTION = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
 
+// System prompt following best practices for educational support chatbots
+const JORDAN_SYSTEM_PROMPT = `You are Jordan, the official AI support assistant for PLTW (Project Lead The Way).
+
+## Your Role
+You provide helpful, accurate support to K-12 educators implementing PLTW programs. You are knowledgeable, friendly, and professional.
+
+## Core Knowledge Areas
+- **Implementation**: School program setup, curriculum integration, pathway planning
+- **Training & Professional Development**: Teacher certification, workshops, online courses
+- **Rostering**: Student enrollment, SIS integration, class management
+- **Assessments**: End-of-course assessments, certification exams, grading
+- **Payment & Billing**: Program fees, invoices, payment plans
+- **Grants & Funding**: Available grants, application processes, funding sources
+
+## Response Guidelines
+1. **Be Direct**: Start with the answer, then provide supporting details
+2. **Be Concise**: Keep responses focused and scannable
+3. **Be Helpful**: Provide actionable next steps when appropriate
+4. **Be Accurate**: Only share information you're confident about
+5. **Use Formatting**: Use bullet points and numbered lists for clarity
+
+## Important Rules
+- NEVER prefix your response with "Bot:", "Jordan:", "Assistant:", or any label
+- If unsure, acknowledge limitations and direct to the Solution Center
+- For complex issues that are not within your knowledge base, recommend contacting: Phone: 877.335.7589 | Email: solutioncenter@pltw.org
+- If the user's question is not related to PLTW, politely decline to answer and recommend contacting the Solution Center. Do not guess unless it is very calculated and you are very confident in your answer from the context you have been given.
+
+## Response Format
+Respond directly to the question without any preamble or role labels. Your response should flow naturally as if speaking directly to the educator.`;
+
+/**
+ * Cleans the response by removing any unwanted prefixes the model might add
+ */
+function cleanResponse(response: string): string {
+  // Remove common bot prefixes that models sometimes add
+  const prefixPatterns = [
+    /^(Bot|Jordan|Assistant|AI|Helper|Support):\s*/i,
+    /^(Hello,?\s*)?(I'm Jordan\.?\s*)?/i,
+  ];
+  
+  let cleaned = response.trim();
+  for (const pattern of prefixPatterns) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+  
+  return cleaned.trim();
+}
+
 export class BedrockService {
   /**
    * Invokes the Bedrock Agent for text-only queries
@@ -94,8 +142,12 @@ export class BedrockService {
         confidence = 0.3;
       }
 
+      // Clean any unwanted prefixes from the response
+      const cleanedResponse = cleanResponse(fullResponse) || 
+        'I apologize, but I was unable to generate a response. Please contact our support team.';
+
       return {
-        response: fullResponse || 'I apologize, but I was unable to generate a response. Please contact our support team.',
+        response: cleanedResponse,
         confidence,
         sources: [...new Set(sources)],
       };
@@ -123,8 +175,12 @@ export class BedrockService {
     
     try {
       // Build the text prompt with file information - keep it concise for faster processing
-      let fullPrompt = `You are Jordan, a PLTW support assistant. Analyze the uploaded file and answer the user's question concisely.
+      let fullPrompt = `${JORDAN_SYSTEM_PROMPT}
 
+## Current Task
+Analyze the uploaded file(s) and answer the user's question based on the content.
+
+## File Contents
 `;
 
       // Process each attachment - limit text extraction for faster processing
@@ -187,7 +243,11 @@ export class BedrockService {
       }
 
       // Add the user's question
-      fullPrompt += `Question: ${prompt || 'Summarize this file.'}`;
+      fullPrompt += `---
+
+User Question: ${prompt || 'Summarize this file.'}
+
+Response:`;
 
       console.log('Final prompt length:', fullPrompt.length);
       console.log('Sending request to Titan model');
@@ -199,6 +259,7 @@ export class BedrockService {
           maxTokenCount: 2048,
           temperature: 0.5,
           topP: 0.9,
+          stopSequences: ['User Question:', 'User:', '\n\nUser']
         },
       };
 
@@ -213,8 +274,11 @@ export class BedrockService {
       console.log('Bedrock response received');
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
 
-      const fullResponse = responseBody.results?.[0]?.outputText || 
+      const rawResponse = responseBody.results?.[0]?.outputText || 
         'I was unable to analyze the attached file(s). Please try again.';
+      
+      // Clean any unwanted prefixes from the response
+      const fullResponse = cleanResponse(rawResponse);
       console.log('Full response length:', fullResponse.length);
 
       let confidence = 0.9;
@@ -285,11 +349,14 @@ export class BedrockService {
     prompt: string
   ): Promise<{ response: string; confidence: number; sources: string[] }> {
     try {
-      const fullPrompt = `You are Jordan, a helpful PLTW (Project Lead The Way) support assistant.
-You help educators with questions about implementation, training, rostering, assessments, payment, and grants.
-Be concise but thorough in your responses.
+      // Structured prompt with system context and user query
+      const fullPrompt = `${JORDAN_SYSTEM_PROMPT}
 
-User question: ${prompt}`;
+---
+
+User Question: ${prompt}
+
+Response:`;
 
       const requestBody = {
         inputText: fullPrompt,
@@ -297,6 +364,7 @@ User question: ${prompt}`;
           maxTokenCount: 4096,
           temperature: 0.7,
           topP: 0.9,
+          stopSequences: ['User Question:', 'User:', '\n\nUser']
         },
       };
 
@@ -310,8 +378,11 @@ User question: ${prompt}`;
       const response = await bedrockClient.send(command);
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
 
-      const fullResponse = responseBody.results?.[0]?.outputText || 
+      const rawResponse = responseBody.results?.[0]?.outputText || 
         'I apologize, but I was unable to generate a response. Please contact our support team.';
+      
+      // Clean any unwanted prefixes from the response
+      const fullResponse = cleanResponse(rawResponse);
 
       let confidence = 0.8;
       if (fullResponse.length < 50) {
@@ -324,8 +395,10 @@ User question: ${prompt}`;
         "I'm not sure",
         'I apologize',
         'I do not have access',
+        'outside my knowledge',
+        'beyond my capabilities',
       ];
-      if (lowConfidencePatterns.some((pattern) => fullResponse.includes(pattern))) {
+      if (lowConfidencePatterns.some((pattern) => fullResponse.toLowerCase().includes(pattern.toLowerCase()))) {
         confidence = 0.3;
       }
 

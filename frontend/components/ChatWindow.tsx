@@ -258,6 +258,7 @@ export default function ChatWindow() {
     contactInfo,
     conversationId,
     sendMessage,
+    resetChat,
   } = useWebSocket(WEBSOCKET_URL);
 
   const {
@@ -321,6 +322,7 @@ export default function ChatWindow() {
     setShowWelcome(true);
     setInputMessage('');
     clearFiles();
+    resetChat();
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -462,7 +464,7 @@ export default function ChatWindow() {
       )}
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto px-6 py-8">
-        {showWelcome && messages.length === 0 ? (
+        {showWelcome ? (
           <div className="max-w-4xl mx-auto">
             <div className="text-center mb-10">
               <div className="w-24 h-24 relative mx-auto mb-6">
