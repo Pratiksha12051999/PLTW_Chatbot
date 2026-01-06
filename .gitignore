@@ -39,6 +39,7 @@ build/
 # ========================================
 backend/cdk/cdk.out/
 backend/cdk/dist/
+backend/cdk.context.json
 cdk.out/
 
 # ========================================
@@ -100,6 +101,7 @@ Thumbs.db
 # ========================================
 .vscode/
 .idea/
+.kiro/
 *.swp
 *.swo
 *.sublime-project

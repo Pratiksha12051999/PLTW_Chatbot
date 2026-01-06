@@ -1,11 +1,28 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
+/**
+ * File attachment interface matching backend FileAttachment type
+ * Requirements: 5.1
+ */
+export interface FileAttachment {
+  fileId: string;
+  conversationId: string;
+  messageId?: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  s3Key: string;
+  uploadedAt: number;
+  status: 'pending' | 'uploaded' | 'deleted';
+}
+
 export interface Message {
   messageId: string;
   conversationId: string;
   content: string;
   role: 'user' | 'assistant';
   timestamp: number;
+  attachments?: FileAttachment[];
   metadata?: {
     confidence?: number;
     sources?: string[];
@@ -31,7 +48,7 @@ export const useWebSocket = (url: string) => {
   const [conversationId, setConversationId] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number>();
+  const reconnectTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!url) {
@@ -50,39 +67,63 @@ export const useWebSocket = (url: string) => {
         };
 
         ws.onmessage = (event) => {
-          const data: WebSocketMessage = JSON.parse(event.data);
+          try {
+            console.log('📨 Raw WebSocket data:', event.data);
+            const data: WebSocketMessage = JSON.parse(event.data);
+            console.log('📨 Parsed WebSocket message:', JSON.stringify(data));
+            console.log('📨 Message type:', data.type);
 
-          switch (data.type) {
-            case 'message_received':
-              if (typeof data.message === 'object') {
-                setMessages(prev => [...prev, data.message as Message]);
-                setConversationId((data.message as Message).conversationId);
-              }
-              setIsTyping(true);
-              break;
+            switch (data.type) {
+              case 'message_received':
+                console.log('Processing message_received');
+                if (typeof data.message === 'object' && data.message) {
+                  const msg = data.message as Message;
+                  // Ensure timestamp is valid
+                  if (!msg.timestamp) {
+                    msg.timestamp = Date.now();
+                  }
+                  console.log('Adding user message:', msg);
+                  setMessages(prev => [...prev, msg]);
+                  setConversationId(msg.conversationId);
+                }
+                setIsTyping(true);
+                break;
 
-            case 'assistant_response':
-              setIsTyping(false);
-              if (typeof data.message === 'object') {
-                setMessages(prev => [...prev, data.message as Message]);
-              }
-              if (data.shouldEscalate) {
+              case 'assistant_response':
+                console.log('Processing assistant_response');
+                setIsTyping(false);
+                if (typeof data.message === 'object' && data.message) {
+                  const msg = data.message as Message;
+                  // Ensure timestamp is valid
+                  if (!msg.timestamp) {
+                    msg.timestamp = Date.now();
+                  }
+                  console.log('Adding assistant message:', msg);
+                  setMessages(prev => [...prev, msg]);
+                }
+                if (data.shouldEscalate) {
+                  setShouldEscalate(true);
+                }
+                break;
+
+              case 'escalated':
+                setIsTyping(false);
                 setShouldEscalate(true);
-              }
-              break;
+                if (data.contactInfo) {
+                  setContactInfo(data.contactInfo);
+                }
+                break;
 
-            case 'escalated':
-              setIsTyping(false);
-              setShouldEscalate(true);
-              if (data.contactInfo) {
-                setContactInfo(data.contactInfo);
-              }
-              break;
-
-            case 'error':
-              setIsTyping(false);
-              console.error('WebSocket error:', data.message);
-              break;
+              case 'error':
+                setIsTyping(false);
+                console.error('WebSocket error message:', data.message);
+                break;
+                
+              default:
+                console.warn('Unknown message type:', data.type);
+            }
+          } catch (parseError) {
+            console.error('Failed to parse WebSocket message:', parseError, event.data);
           }
         };
 
@@ -120,14 +161,27 @@ export const useWebSocket = (url: string) => {
     };
   }, [url]);
 
-  const sendMessage = useCallback((content: string, category: string = 'General') => {
+  const sendMessage = useCallback((content: string, category: string = 'General', fileIds?: string[]) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
+      const payload: {
+        action: string;
+        message: string;
+        conversationId: string | null;
+        category: string;
+        fileIds?: string[];
+      } = {
         action: 'sendMessage',
         message: content,
         conversationId,
         category
-      }));
+      };
+      
+      // Include fileIds if provided (Requirement 4.6)
+      if (fileIds && fileIds.length > 0) {
+        payload.fileIds = fileIds;
+      }
+      
+      wsRef.current.send(JSON.stringify(payload));
     } else {
       console.error('WebSocket is not connected');
     }
