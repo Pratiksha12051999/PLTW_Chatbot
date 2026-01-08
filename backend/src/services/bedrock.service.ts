@@ -6,8 +6,8 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { FileAttachment } from '../types/index.js';
 import mammoth from 'mammoth';
 
-const agentClient = new BedrockAgentRuntimeClient({ region: process.env.AWS_REGION });
-const s3Client = new S3Client({ region: process.env.AWS_REGION });
+const agentClient = new BedrockAgentRuntimeClient({ region: 'us-east-1' });
+const s3Client = new S3Client({ region: 'us-east-1' });
 
 const AGENT_ID = process.env.BEDROCK_AGENT_ID!;
 const AGENT_ALIAS_ID = process.env.BEDROCK_AGENT_ALIAS_ID!;
