@@ -18,8 +18,8 @@ const AGENT_ID = process.env.BEDROCK_AGENT_ID || '';
 const AGENT_ALIAS_ID = process.env.BEDROCK_AGENT_ALIAS_ID || '';
 const UPLOADS_BUCKET = process.env.UPLOADS_BUCKET!;
 
-// Amazon Titan model for text analysis
-const TITAN_MODEL_ID = 'amazon.titan-text-express-v1';
+// Amazon Titan Premier model for text analysis
+const TITAN_MODEL_ID = 'amazon.titan-text-premier-v1:0';
 
 // Check if Bedrock Agent is configured
 const HAS_BEDROCK_AGENT = AGENT_ID && AGENT_ALIAS_ID;
