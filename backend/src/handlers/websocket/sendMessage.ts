@@ -87,7 +87,7 @@ export const handler = async (
     });
 
     const { response, confidence, sources } = attachments && attachments.length > 0 && bedrockService.hasAnalyzableAttachments(attachments)
-      ? await bedrockService.analyzeWithAttachments(message!, attachments)
+      ? await bedrockService.analyzeWithAttachments(message!, attachments, conversationId)
       : await bedrockService.invokeAgent(message!, conversationId);
 
     const assistantMessage: Message = {
