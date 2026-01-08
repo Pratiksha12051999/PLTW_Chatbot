@@ -259,7 +259,6 @@ Response:`;
           maxTokenCount: 2048,
           temperature: 0.5,
           topP: 0.9,
-          stopSequences: ['User Question:', 'User:', '\n\nUser']
         },
       };
 
@@ -364,7 +363,6 @@ Response:`;
           maxTokenCount: 4096,
           temperature: 0.7,
           topP: 0.9,
-          stopSequences: ['User Question:', 'User:', '\n\nUser']
         },
       };
 

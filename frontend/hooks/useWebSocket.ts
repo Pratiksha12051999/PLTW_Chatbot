@@ -177,15 +177,7 @@ export const useWebSocket = (url: string) => {
       // Immediately show typing indicator to prevent blank screen
       setIsTyping(true);
       
-      // Add optimistic user message immediately for instant feedback
-      const optimisticMessage: Message = {
-        messageId: `temp-${Date.now()}`,
-        conversationId: conversationId || 'pending',
-        content,
-        role: 'user',
-        timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, optimisticMessage]);
+     
       
       const payload: {
         action: string;
