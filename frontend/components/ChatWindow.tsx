@@ -273,9 +273,9 @@ export default function ChatWindow() {
 
   const { login, isAuthenticated } = useAuth();
 
-  const handleSendMessage = async (content?: string) => {
+  const handleSendMessage = async (content?: string, category: string = 'General') => {
     const messageToSend = content || inputMessage.trim();
-    console.log('handleSendMessage called:', { messageToSend, uploadingFilesLength: uploadingFiles.length, isUploading });
+    console.log('handleSendMessage called:', { messageToSend, category, uploadingFilesLength: uploadingFiles.length, isUploading });
     
     if (!messageToSend && uploadingFiles.length === 0) {
       console.log('No message to send');
@@ -292,7 +292,7 @@ export default function ChatWindow() {
     const fileIds = getUploadedFileIds();
     console.log('Sending message with fileIds:', fileIds);
 
-    sendMessage(messageToSend, 'General', fileIds.length > 0 ? fileIds : undefined);
+    sendMessage(messageToSend, category, fileIds.length > 0 ? fileIds : undefined);
     setInputMessage('');
     setShowWelcome(false);
     
@@ -300,8 +300,8 @@ export default function ChatWindow() {
     clearFiles();
   };
 
-  const handleQuickQuestion = (question: string) => {
-    handleSendMessage(question);
+  const handleQuickQuestion = (question: string, category: string) => {
+    handleSendMessage(question, category);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -502,7 +502,7 @@ export default function ChatWindow() {
                       {topic.questions.map((question, qIdx) => (
                         <button
                           key={qIdx}
-                          onClick={() => handleQuickQuestion(question)}
+                          onClick={() => handleQuickQuestion(question, topic.title)}
                           className="w-full text-left text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 hover:text-blue-900 px-3 py-2 rounded-lg transition-all"
                         >
                           {question}

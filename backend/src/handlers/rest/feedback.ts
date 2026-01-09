@@ -29,6 +29,12 @@ export const submitFeedback = async (
       updates.comment = comment;
     }
 
+    // If user gives negative feedback, mark as escalated with 'user_not_satisfied' reason
+    if (satisfaction === 'negative') {
+      updates.status = 'escalated';
+      updates.escalationReason = 'user_not_satisfied';
+    }
+
     await dynamoDBService.updateConversation(conversationId, updates);
 
     return {

@@ -87,7 +87,7 @@ export const handler = async (
     });
 
     const { response, confidence, sources } = attachments && attachments.length > 0 && bedrockService.hasAnalyzableAttachments(attachments)
-      ? await bedrockService.analyzeWithAttachments(message!, attachments, conversationId)
+      ? await bedrockService.analyzeWithAttachments(message!, attachments)
       : await bedrockService.invokeAgent(message!, conversationId);
 
     const assistantMessage: Message = {
@@ -102,6 +102,15 @@ export const handler = async (
 
     const messageCount = conversation.messages.length + 2;
     const shouldEscalate = bedrockService.shouldEscalate(confidence, messageCount);
+
+    // Auto-escalate with 'no_answer' reason when confidence is very low
+    if (confidence < 0.4 && conversation.status !== 'escalated') {
+      await dynamoDBService.updateConversation(conversationId, {
+        status: 'escalated',
+        endTime: Date.now(),
+        escalationReason: 'no_answer',
+      });
+    }
 
     await wsService.sendMessage(connectionId, {
       type: 'assistant_response',

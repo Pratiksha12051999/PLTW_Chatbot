@@ -5,6 +5,10 @@ import Image from 'next/image';
 import { MessageSquare, AlertTriangle, ThumbsUp, TrendingUp, TrendingDown } from 'lucide-react';
 import { adminAPI, MetricsResponse, Conversation } from '@/lib/api';
 import { formatDistanceToNow } from 'date-fns';
+import ConversationVolumeChart from '@/components/charts/ConversationVolumeChart';
+import EscalationReasonsChart from '@/components/charts/EscalationReasonsChart';
+import TopCategoriesChart from '@/components/charts/TopCategoriesChart';
+import UserSatisfactionChart from '@/components/charts/UserSatisfactionChart';
 
 export default function AdminDashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState<number>(7);
@@ -42,10 +46,6 @@ export default function AdminDashboard() {
         setIsLoading(false);
       }
     };
-
-  const maxVolume = metrics
-    ? Math.max(...metrics.conversationVolume.map(d => d.count), 1)
-    : 1;
 
   const periodDaysMap: { [key: string]: number } = {
     'Last 7 Days': 7,
@@ -198,73 +198,16 @@ export default function AdminDashboard() {
           {/* Conversation Volume Chart */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">Conversation Volume Over Time</h3>
-            {metrics.conversationVolume.length > 0 ? (
-              <div className="h-64 flex items-end justify-between gap-2">
-                {metrics.conversationVolume.map((item, idx) => (
-                  <div key={idx} className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-blue-600 rounded-t-lg relative" style={{ height: `${(item.count / maxVolume) * 100}%`, minHeight: item.count > 0 ? '20px' : '0' }}>
-                      <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-medium text-gray-600">
-                        {item.count}
-                      </div>
-                    </div>
-                    <span className="text-xs text-gray-500 whitespace-nowrap">{new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="h-64 flex items-center justify-center text-gray-500">
-                No conversation data available
-              </div>
-            )}
+            <ConversationVolumeChart data={metrics.conversationVolume} />
           </div>
 
           {/* Escalation Reasons Donut */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">Escalation Reasons</h3>
-            <div className="flex items-center justify-center h-64">
-              {totalEscalations > 0 ? (
-                <div className="relative w-48 h-48">
-                  <svg viewBox="0 0 100 100" className="transform -rotate-90">
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="40"
-                      fill="none"
-                      stroke="#1e3a8a"
-                      strokeWidth="20"
-                      strokeDasharray={`${(metrics.escalationReasons.no_answer / totalEscalations) * 251} 251`}
-                    />
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="40"
-                      fill="none"
-                      stroke="#3b82f6"
-                      strokeWidth="20"
-                      strokeDasharray={`${(metrics.escalationReasons.user_not_satisfied / totalEscalations) * 251} 251`}
-                      strokeDashoffset={`-${(metrics.escalationReasons.no_answer / totalEscalations) * 251}`}
-                    />
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="40"
-                      fill="none"
-                      stroke="#93c5fd"
-                      strokeWidth="20"
-                      strokeDasharray={`${(metrics.escalationReasons.requested_agent / totalEscalations) * 251} 251`}
-                      strokeDashoffset={`-${((metrics.escalationReasons.no_answer + metrics.escalationReasons.user_not_satisfied) / totalEscalations) * 251}`}
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-gray-900">{metrics.escalationRate.toFixed(1)}%</div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-gray-500">No escalations</div>
-              )}
-            </div>
+            <EscalationReasonsChart 
+              data={metrics.escalationReasons} 
+              escalationRate={metrics.escalationRate} 
+            />
             <div className="grid grid-cols-3 gap-4 mt-4">
               <div className="text-center">
                 <div className="flex items-center justify-center gap-2 mb-1">
@@ -296,42 +239,13 @@ export default function AdminDashboard() {
           {/* Top Question Categories */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">Top Question Categories</h3>
-            {metrics.topCategories.length > 0 ? (
-              <div className="space-y-4">
-                {metrics.topCategories.map((category, idx) => (
-                  <div key={idx} className="flex items-center gap-4">
-                    <div className="w-32 text-sm text-gray-600 text-right">{category.category}</div>
-                    <div className="flex-1 h-8 bg-gray-100 rounded-lg overflow-hidden">
-                      <div
-                        className="h-full bg-blue-600 rounded-lg"
-                        style={{ width: `${(category.count / metrics.topCategories[0].count) * 100}%` }}
-                      ></div>
-                    </div>
-                    <div className="w-12 text-sm font-medium text-gray-900">{category.count}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center text-gray-500 py-8">No category data available</div>
-            )}
+            <TopCategoriesChart data={metrics.topCategories} />
           </div>
 
           {/* User Satisfaction Donut - Placeholder */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">User Satisfaction</h3>
-            <div className="flex items-center justify-center h-64">
-              <div className="relative w-48 h-48">
-                <svg viewBox="0 0 100 100" className="transform -rotate-90">
-                  <circle cx="50" cy="50" r="40" fill="none" stroke="#10b981" strokeWidth="20" strokeDasharray={`${metrics.overallSatisfaction * 2.51} 251`} />
-                  <circle cx="50" cy="50" r="40" fill="none" stroke="#ef4444" strokeWidth="20" strokeDasharray={`${(100 - metrics.overallSatisfaction) * 2.51} 251`} strokeDashoffset={`-${metrics.overallSatisfaction * 2.51}`} />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-gray-900">{metrics.overallSatisfaction.toFixed(1)}%</div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <UserSatisfactionChart satisfactionPercentage={metrics.overallSatisfaction} />
             <div className="flex justify-center gap-6 mt-4">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-green-500"></div>
