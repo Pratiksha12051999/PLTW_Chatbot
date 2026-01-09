@@ -18,11 +18,8 @@ const AGENT_ID = process.env.BEDROCK_AGENT_ID || '';
 const AGENT_ALIAS_ID = process.env.BEDROCK_AGENT_ALIAS_ID || '';
 const UPLOADS_BUCKET = process.env.UPLOADS_BUCKET!;
 
-// Amazon Nova Pro - multimodal model (text + image), no access request needed
+// Amazon Nova Pro - multimodal model for file analysis
 const MODEL_ID = 'amazon.nova-pro-v1:0';
-
-// Check if Bedrock Agent is configured
-const HAS_BEDROCK_AGENT = AGENT_ID && AGENT_ALIAS_ID;
 
 // Supported media types
 const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -80,18 +77,11 @@ function cleanResponse(response: string): string {
 export class BedrockService {
   /**
    * Invokes the Bedrock Agent for text-only queries
-   * Falls back to Titan if no agent is configured
    */
   async invokeAgent(
     prompt: string,
     sessionId: string
   ): Promise<{ response: string; confidence: number; sources: string[] }> {
-    // If no Bedrock Agent is configured, use Titan directly
-    if (!HAS_BEDROCK_AGENT) {
-      console.log('No Bedrock Agent configured, using Titan directly');
-      return this.invokeTitan(prompt);
-    }
-    
     try {
       const command = new InvokeAgentCommand({
         agentId: AGENT_ID,
@@ -346,78 +336,5 @@ Response:`;
 
   shouldEscalate(confidence: number, messageCount: number): boolean {
     return confidence < 0.4 || messageCount > 10;
-  }
-
-  /**
-   * Invokes Nova Pro directly for text queries (fallback when no agent is configured)
-   */
-  private async invokeTitan(
-    prompt: string
-  ): Promise<{ response: string; confidence: number; sources: string[] }> {
-    try {
-      // Amazon Nova request format
-      const requestBody = {
-        messages: [
-          {
-            role: "user",
-            content: [
-              { text: `${JORDAN_SYSTEM_PROMPT}\n\nUser Question: ${prompt}` }
-            ]
-          }
-        ],
-        inferenceConfig: {
-          maxTokens: 4096,
-          temperature: 0.3
-        }
-      };
-
-      const command = new InvokeModelCommand({
-        modelId: MODEL_ID,
-        contentType: 'application/json',
-        accept: 'application/json',
-        body: JSON.stringify(requestBody),
-      });
-
-      const response = await bedrockClient.send(command);
-      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-
-      // Nova response format: { output: { message: { content: [{ text: "..." }] } } }
-      const rawResponse = responseBody.output?.message?.content?.[0]?.text || 
-        'I apologize, but I was unable to generate a response. Please contact our support team.';
-      
-      // Clean any unwanted prefixes from the response
-      const fullResponse = cleanResponse(rawResponse);
-
-      let confidence = 0.8;
-      if (fullResponse.length < 50) {
-        confidence = 0.5;
-      }
-
-      const lowConfidencePatterns = [
-        "I don't have",
-        "I cannot find",
-        "I'm not sure",
-        'I apologize',
-        'I do not have access',
-        'outside my knowledge',
-        'beyond my capabilities',
-      ];
-      if (lowConfidencePatterns.some((pattern) => fullResponse.toLowerCase().includes(pattern.toLowerCase()))) {
-        confidence = 0.3;
-      }
-
-      return {
-        response: fullResponse,
-        confidence,
-        sources: [],
-      };
-    } catch (error) {
-      console.error('Model invocation error:', error);
-      return {
-        response: 'I encountered an error processing your request. Please try again or contact support.',
-        confidence: 0,
-        sources: [],
-      };
-    }
   }
 }

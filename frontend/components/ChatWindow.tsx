@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Send, Paperclip, User, RefreshCw, X, CheckCircle, AlertCircle, Loader2, Download } from 'lucide-react';
+import { Send, Paperclip, User, RefreshCw, X, CheckCircle, AlertCircle, Loader2, Download, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { useWebSocket, FileAttachment } from '@/hooks/useWebSocket';
 import { useFileUpload, UploadingFile } from '@/hooks/useFileUpload';
 import { getDownloadUrl } from '@/lib/uploadApi';
+import { adminAPI } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 import Image from 'next/image';
@@ -247,6 +248,7 @@ export default function ChatWindow() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'positive' | 'negative'>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
@@ -318,11 +320,27 @@ export default function ChatWindow() {
     fileInputRef.current?.click();
   };
 
+  const handleFeedback = async (messageId: string, satisfaction: 'positive' | 'negative') => {
+    if (!conversationId || feedbackGiven[messageId]) return;
+    
+    try {
+      await adminAPI.submitFeedback({
+        conversationId,
+        satisfaction,
+      });
+      setFeedbackGiven(prev => ({ ...prev, [messageId]: satisfaction }));
+      console.log(`Feedback submitted: ${satisfaction} for message ${messageId}`);
+    } catch (error) {
+      console.error('Failed to submit feedback:', error);
+    }
+  };
+
   const resetToHome = () => {
     setShowWelcome(true);
     setInputMessage('');
     clearFiles();
     resetChat();
+    setFeedbackGiven({});
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -544,9 +562,44 @@ export default function ChatWindow() {
                       isUserMessage={msg.role === 'user'}
                     />
                   )}
-                  <span className={`text-xs mt-2 block ${msg.role === 'user' ? 'opacity-80' : 'opacity-60'}`}>
-                    {msg.timestamp ? formatDistanceToNow(new Date(msg.timestamp), { addSuffix: true }) : 'just now'}
-                  </span>
+                  <div className={`flex items-center justify-between mt-2 ${msg.role === 'user' ? '' : ''}`}>
+                    <span className={`text-xs ${msg.role === 'user' ? 'opacity-80' : 'opacity-60'}`}>
+                      {msg.timestamp ? formatDistanceToNow(new Date(msg.timestamp), { addSuffix: true }) : 'just now'}
+                    </span>
+                    {/* Feedback buttons for assistant messages */}
+                    {msg.role === 'assistant' && (
+                      <div className="flex gap-1 ml-3">
+                        <button
+                          onClick={() => handleFeedback(msg.messageId, 'positive')}
+                          disabled={!!feedbackGiven[msg.messageId]}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            feedbackGiven[msg.messageId] === 'positive'
+                              ? 'bg-green-100 text-green-600'
+                              : feedbackGiven[msg.messageId]
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
+                          }`}
+                          title="Helpful"
+                        >
+                          <ThumbsUp className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleFeedback(msg.messageId, 'negative')}
+                          disabled={!!feedbackGiven[msg.messageId]}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            feedbackGiven[msg.messageId] === 'negative'
+                              ? 'bg-red-100 text-red-600'
+                              : feedbackGiven[msg.messageId]
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                          }`}
+                          title="Not helpful"
+                        >
+                          <ThumbsDown className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
