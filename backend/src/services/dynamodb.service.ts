@@ -125,9 +125,12 @@ export class DynamoDBService {
     const result = await docClient.send(
       new ScanCommand({
         TableName: CONVERSATIONS_TABLE,
-        Limit: limit,
       })
     );
-    return (result.Items as Conversation[]) || [];
+    const conversations = (result.Items as Conversation[]) || [];
+    // Sort by startTime descending (most recent first) and limit
+    return conversations
+      .sort((a, b) => b.startTime - a.startTime)
+      .slice(0, limit);
   }
 }
