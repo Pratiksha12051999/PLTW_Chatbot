@@ -18,8 +18,8 @@ const AGENT_ID = process.env.BEDROCK_AGENT_ID || '';
 const AGENT_ALIAS_ID = process.env.BEDROCK_AGENT_ALIAS_ID || '';
 const UPLOADS_BUCKET = process.env.UPLOADS_BUCKET!;
 
-// Claude 3 Haiku (fast, cost-effective, widely available)
-const MODEL_ID = 'anthropic.claude-3-haiku-20240307-v1:0';
+// Amazon Nova Pro - multimodal model (text + image), no access request needed
+const MODEL_ID = 'amazon.nova-pro-v1:0';
 
 // Check if Bedrock Agent is configured
 const HAS_BEDROCK_AGENT = AGENT_ID && AGENT_ALIAS_ID;
@@ -250,20 +250,22 @@ User Question: ${prompt || 'Summarize this file.'}
 Response:`;
 
       console.log('Final prompt length:', fullPrompt.length);
-      console.log('Sending request to Titan model');
+      console.log('Sending request to Nova model');
 
-      // Build the request for Claude
+      // Build the request for Amazon Nova
       const requestBody = {
-        anthropic_version: "bedrock-2023-05-31",
-        max_tokens: 2048,
-        temperature: 0.5,
-        system: fullPrompt.substring(0, fullPrompt.lastIndexOf('---')),
         messages: [
           {
             role: "user",
-            content: prompt || 'Summarize this file.'
+            content: [
+              { text: fullPrompt }
+            ]
           }
-        ]
+        ],
+        inferenceConfig: {
+          maxTokens: 2048,
+          temperature: 0.3
+        }
       };
 
       const command = new InvokeModelCommand({
@@ -277,7 +279,8 @@ Response:`;
       console.log('Bedrock response received');
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
 
-      const rawResponse = responseBody.content?.[0]?.text || 
+      // Nova response format: { output: { message: { content: [{ text: "..." }] } } }
+      const rawResponse = responseBody.output?.message?.content?.[0]?.text || 
         'I was unable to analyze the attached file(s). Please try again.';
       
       // Clean any unwanted prefixes from the response
@@ -346,24 +349,26 @@ Response:`;
   }
 
   /**
-   * Invokes Titan directly for text queries (fallback when no agent is configured)
+   * Invokes Nova Pro directly for text queries (fallback when no agent is configured)
    */
   private async invokeTitan(
     prompt: string
   ): Promise<{ response: string; confidence: number; sources: string[] }> {
     try {
-      // Claude 3.5 Sonnet request format
+      // Amazon Nova request format
       const requestBody = {
-        anthropic_version: "bedrock-2023-05-31",
-        max_tokens: 4096,
-        temperature: 0.7,
-        system: JORDAN_SYSTEM_PROMPT,
         messages: [
           {
             role: "user",
-            content: prompt
+            content: [
+              { text: `${JORDAN_SYSTEM_PROMPT}\n\nUser Question: ${prompt}` }
+            ]
           }
-        ]
+        ],
+        inferenceConfig: {
+          maxTokens: 4096,
+          temperature: 0.3
+        }
       };
 
       const command = new InvokeModelCommand({
@@ -376,7 +381,8 @@ Response:`;
       const response = await bedrockClient.send(command);
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
 
-      const rawResponse = responseBody.content?.[0]?.text || 
+      // Nova response format: { output: { message: { content: [{ text: "..." }] } } }
+      const rawResponse = responseBody.output?.message?.content?.[0]?.text || 
         'I apologize, but I was unable to generate a response. Please contact our support team.';
       
       // Clean any unwanted prefixes from the response
