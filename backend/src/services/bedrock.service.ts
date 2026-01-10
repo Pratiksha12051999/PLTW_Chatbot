@@ -2,59 +2,21 @@ import {
   BedrockAgentRuntimeClient,
   InvokeAgentCommand,
 } from '@aws-sdk/client-bedrock-agent-runtime';
-import {
-  BedrockRuntimeClient,
-  InvokeModelCommand,
-} from '@aws-sdk/client-bedrock-runtime';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { FileAttachment } from '../types/index.js';
 import mammoth from 'mammoth';
 
 const agentClient = new BedrockAgentRuntimeClient({ region: process.env.AWS_REGION });
-const bedrockClient = new BedrockRuntimeClient({ region: process.env.AWS_REGION });
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
 
 const AGENT_ID = process.env.BEDROCK_AGENT_ID || '';
 const AGENT_ALIAS_ID = process.env.BEDROCK_AGENT_ALIAS_ID || '';
 const UPLOADS_BUCKET = process.env.UPLOADS_BUCKET!;
 
-// Amazon Nova Pro - multimodal model for file analysis
-const MODEL_ID = 'amazon.nova-pro-v1:0';
-
 // Supported media types
 const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 // PDFs and documents need text extraction
 const DOCUMENT_TYPES_FOR_TEXT_EXTRACTION = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-
-// System prompt following best practices for educational support chatbots
-const JORDAN_SYSTEM_PROMPT = `You are Jordan, the official AI support assistant for PLTW (Project Lead The Way).
-
-## Your Role
-You provide helpful, accurate support to K-12 educators implementing PLTW programs. You are knowledgeable, friendly, and professional.
-
-## Core Knowledge Areas
-- **Implementation**: School program setup, curriculum integration, pathway planning
-- **Training & Professional Development**: Teacher certification, workshops, online courses
-- **Rostering**: Student enrollment, SIS integration, class management
-- **Assessments**: End-of-course assessments, certification exams, grading
-- **Payment & Billing**: Program fees, invoices, payment plans
-- **Grants & Funding**: Available grants, application processes, funding sources
-
-## Response Guidelines
-1. **Be Direct**: Start with the answer, then provide supporting details
-2. **Be Concise**: Keep responses focused and scannable
-3. **Be Helpful**: Provide actionable next steps when appropriate
-4. **Be Accurate**: Only share information you're confident about
-5. **Use Formatting**: Use bullet points and numbered lists for clarity
-
-## Important Rules
-- NEVER prefix your response with "Bot:", "Jordan:", "Assistant:", or any label
-- If unsure, acknowledge limitations and direct to the Solution Center
-- For complex issues that are not within your knowledge base, recommend contacting: Phone: 877.335.7589 | Email: solutioncenter@pltw.org
-- If the user's question is not related to PLTW, politely decline to answer and recommend contacting the Solution Center. Do not guess unless it is very calculated and you are very confident in your answer from the context you have been given.
-
-## Response Format
-Respond directly to the question without any preamble or role labels. Your response should flow naturally as if speaking directly to the educator.`;
 
 /**
  * Cleans the response by removing any unwanted prefixes the model might add
@@ -152,29 +114,23 @@ export class BedrockService {
   }
 
   /**
-   * Analyzes files using Amazon Titan text model
-   * Extracts text from PDFs and Word docs, then sends to Titan
+   * Analyzes files by extracting content, then passes to Bedrock Agent for knowledge base access
+   * Step 1: Extract text from PDFs/Word docs
+   * Step 2: Send extracted content + user question to Bedrock Agent
    */
   async analyzeWithAttachments(
     prompt: string,
-    attachments: FileAttachment[]
+    attachments: FileAttachment[],
+    sessionId: string
   ): Promise<{ response: string; confidence: number; sources: string[] }> {
     console.log('=== analyzeWithAttachments START ===');
     console.log('Prompt:', prompt);
     console.log('Attachments count:', attachments.length);
     
     try {
-      // Build the text prompt with file information - keep it concise for faster processing
-      let fullPrompt = `${JORDAN_SYSTEM_PROMPT}
-
-## Current Task
-Analyze the uploaded file(s) and answer the user's question based on the content and the existing information you have from the knowledge base.
-
-## File Contents
-`;
-
-      // Process each attachment - limit text extraction for faster processing
-      const MAX_TEXT_LENGTH = 8000; // Reduced from 15000 for faster processing
+      // Step 1: Extract text content from all attachments
+      const extractedContents: string[] = [];
+      const MAX_TEXT_LENGTH = 8000;
       
       for (const attachment of attachments) {
         console.log(`Processing attachment: ${attachment.filename} (${attachment.contentType})`);
@@ -188,10 +144,10 @@ Analyze the uploaded file(s) and answer the user's question based on the content
           const truncatedContent = textContent.length > MAX_TEXT_LENGTH 
             ? textContent.substring(0, MAX_TEXT_LENGTH) + '\n... [truncated]'
             : textContent;
-          fullPrompt += `[${attachment.filename}]:\n${truncatedContent}\n\n`;
+          extractedContents.push(`[File: ${attachment.filename}]\n${truncatedContent}`);
         } else if (SUPPORTED_IMAGE_TYPES.includes(attachment.contentType)) {
-          console.log('Adding as IMAGE note (Titan does not support images)');
-          fullPrompt += `[Image: ${attachment.filename}] - I cannot view images directly. Please describe what you see.\n\n`;
+          console.log('Image file - cannot extract text');
+          extractedContents.push(`[Image: ${attachment.filename}] - Image content cannot be extracted as text.`);
         } else if (attachment.contentType === 'application/pdf') {
           console.log('Extracting text from PDF');
           try {
@@ -204,10 +160,10 @@ Analyze the uploaded file(s) and answer the user's question based on the content
               ? extractedText.substring(0, MAX_TEXT_LENGTH) + '\n... [truncated]'
               : extractedText;
             
-            fullPrompt += `[${attachment.filename}]:\n${truncatedContent}\n\n`;
+            extractedContents.push(`[File: ${attachment.filename}]\n${truncatedContent}`);
           } catch (pdfError) {
             console.error('PDF extraction error:', pdfError);
-            fullPrompt += `[PDF: ${attachment.filename}] - Unable to extract text.\n\n`;
+            extractedContents.push(`[PDF: ${attachment.filename}] - Unable to extract text.`);
           }
         } else if (attachment.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
           console.log('Extracting text from Word document');
@@ -220,75 +176,47 @@ Analyze the uploaded file(s) and answer the user's question based on the content
               ? extractedText.substring(0, MAX_TEXT_LENGTH) + '\n... [truncated]'
               : extractedText;
             
-            fullPrompt += `[${attachment.filename}]:\n${truncatedContent}\n\n`;
+            extractedContents.push(`[File: ${attachment.filename}]\n${truncatedContent}`);
           } catch (docError) {
             console.error('Word doc extraction error:', docError);
-            fullPrompt += `[Word: ${attachment.filename}] - Unable to extract text.\n\n`;
+            extractedContents.push(`[Word: ${attachment.filename}] - Unable to extract text.`);
           }
         } else if (attachment.contentType === 'application/msword') {
-          fullPrompt += `[${attachment.filename}] - Old .doc format. Please save as .docx.\n\n`;
+          extractedContents.push(`[${attachment.filename}] - Old .doc format not supported.`);
         } else {
-          fullPrompt += `[${attachment.filename}] - Cannot analyze this file type.\n\n`;
+          extractedContents.push(`[${attachment.filename}] - Unsupported file type.`);
         }
       }
 
-      // Add the user's question
-      fullPrompt += `---
+      // Step 2: Build prompt with extracted content and send to Bedrock Agent
+      const fileContext = extractedContents.join('\n\n---\n\n');
+      const augmentedPrompt = `The user has uploaded the following file(s). Use this content along with your knowledge base to answer their question.
 
-User Question: ${prompt || 'Summarize this file.'}
+=== UPLOADED FILE CONTENT ===
+${fileContext}
+=== END FILE CONTENT ===
 
-Response:`;
+User's Question: ${prompt || 'Please summarize and analyze the uploaded file(s).'}`;
 
-      console.log('Final prompt length:', fullPrompt.length);
-      console.log('Sending request to Nova model');
+      console.log('Sending augmented prompt to Bedrock Agent');
+      console.log('Augmented prompt length:', augmentedPrompt.length);
 
-      // Build the request for Amazon Nova
-      const requestBody = {
-        messages: [
-          {
-            role: "user",
-            content: [
-              { text: fullPrompt }
-            ]
-          }
-        ],
-        inferenceConfig: {
-          maxTokens: 2048,
-          temperature: 0.3
-        }
-      };
-
-      const command = new InvokeModelCommand({
-        modelId: MODEL_ID,
-        contentType: 'application/json',
-        accept: 'application/json',
-        body: JSON.stringify(requestBody),
-      });
-
-      const response = await bedrockClient.send(command);
-      console.log('Bedrock response received');
-      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-
-      // Nova response format: { output: { message: { content: [{ text: "..." }] } } }
-      const rawResponse = responseBody.output?.message?.content?.[0]?.text || 
-        'I was unable to analyze the attached file(s). Please try again.';
+      // Use the Bedrock Agent which has access to the knowledge base
+      const agentResult = await this.invokeAgent(augmentedPrompt, sessionId);
       
-      // Clean any unwanted prefixes from the response
-      const fullResponse = cleanResponse(rawResponse);
-      console.log('Full response length:', fullResponse.length);
-
-      let confidence = 0.9;
-      if (fullResponse.length < 50) {
-        confidence = 0.5;
-      }
+      // Add filenames to sources
+      const allSources = [
+        ...attachments.map(a => a.filename),
+        ...agentResult.sources
+      ];
 
       return {
-        response: fullResponse,
-        confidence,
-        sources: attachments.map(a => a.filename),
+        response: agentResult.response,
+        confidence: agentResult.confidence,
+        sources: [...new Set(allSources)],
       };
     } catch (error: any) {
-      console.error('=== Multimodal analysis error ===');
+      console.error('=== File analysis error ===');
       console.error('Error name:', error?.name);
       console.error('Error message:', error?.message);
       console.error('Full error:', JSON.stringify(error, null, 2));
