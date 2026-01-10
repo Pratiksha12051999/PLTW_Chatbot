@@ -9,6 +9,7 @@ import ConversationVolumeChart from '@/components/charts/ConversationVolumeChart
 import EscalationReasonsChart from '@/components/charts/EscalationReasonsChart';
 import TopCategoriesChart from '@/components/charts/TopCategoriesChart';
 import UserSatisfactionChart from '@/components/charts/UserSatisfactionChart';
+import ConversationDetailModal from '@/components/admin/ConversationDetailModal';
 
 export default function AdminDashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState<number>(7);
@@ -17,6 +18,8 @@ export default function AdminDashboard() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -63,6 +66,16 @@ export default function AdminDashboard() {
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const handleConversationClick = (conversation: Conversation) => {
+    setSelectedConversation(conversation);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedConversation(null);
   };
 
   if (isLoading) {
@@ -281,7 +294,11 @@ export default function AdminDashboard() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {conversations.slice(0, 10).map((conv, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
+                  <tr 
+                    key={idx} 
+                    className="hover:bg-gray-100 cursor-pointer transition-colors"
+                    onClick={() => handleConversationClick(conv)}
+                  >
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {conv.category}
                     </td>
@@ -306,6 +323,13 @@ export default function AdminDashboard() {
           )}
         </div>
       </main>
+
+      {/* Conversation Detail Modal */}
+      <ConversationDetailModal
+        conversation={selectedConversation}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+      />
     </div>
   );
 }

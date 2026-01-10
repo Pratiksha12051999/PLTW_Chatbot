@@ -23,13 +23,22 @@ export interface Conversation {
   conversationId: string;
   category: string;
   startTime: number;
-  status: string;
+  endTime?: number;
+  status: 'active' | 'resolved' | 'escalated';
   userId: string;
+  satisfaction?: 'positive' | 'negative';
+  escalationReason?: 'no_answer' | 'user_not_satisfied' | 'requested_agent';
   messages: Array<{
     messageId: string;
-    role: string;
+    role: 'user' | 'assistant';
     content: string;
     timestamp: number;
+    attachments?: Array<{
+      fileId: string;
+      filename: string;
+      contentType: string;
+      size: number;
+    }>;
   }>;
 }
 
