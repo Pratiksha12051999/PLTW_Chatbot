@@ -94,11 +94,29 @@ export class RestApiStack extends cdk.Stack {
       },
     });
 
+    // Citation URL handler - POST /citation/url
+    const citationUrlHandler = new lambda.Function(this, 'CitationUrlHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'upload.getCitationUrl',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda-bundle')),
+      timeout: cdk.Duration.seconds(10),
+      environment: {
+        FILE_ATTACHMENTS_TABLE: fileAttachmentsTable.tableName,
+        UPLOADS_BUCKET: uploadsBucket.bucketName,
+      },
+    });
+
     // Grant S3 permissions (PutObject, GetObject) to upload handlers
     uploadsBucket.grantPut(presignUploadHandler);
     uploadsBucket.grantRead(downloadUrlHandler);
     // Presign handler needs GetObject for generating presigned URLs
     uploadsBucket.grantRead(presignUploadHandler);
+
+    // Citation handler needs broad S3 read access for knowledge base buckets
+    citationUrlHandler.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+      actions: ['s3:GetObject'],
+      resources: ['arn:aws:s3:::*/*'],  // Access to any S3 bucket for citations
+    }));
 
     // Grant DynamoDB permissions for file attachments table
     fileAttachmentsTable.grantReadWriteData(presignUploadHandler);
@@ -143,6 +161,13 @@ export class RestApiStack extends cdk.Stack {
     const download = upload.addResource('download');
     const downloadFile = download.addResource('{fileId}');
     downloadFile.addMethod('GET', new apigateway.LambdaIntegration(downloadUrlHandler));
+
+    // Citation endpoint
+    const citation = this.api.root.addResource('citation');
+    
+    // POST /citation/url - Get presigned URL for citation source
+    const citationUrl = citation.addResource('url');
+    citationUrl.addMethod('POST', new apigateway.LambdaIntegration(citationUrlHandler));
 
     // Outputs
     new cdk.CfnOutput(this, 'RestApiUrl', {

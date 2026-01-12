@@ -1,6 +1,9 @@
 'use client';
 
-import { ExternalLink, FileText } from 'lucide-react';
+import { useState } from 'react';
+import { ExternalLink, FileText, Loader2 } from 'lucide-react';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://0yv0e0n3ck.execute-api.us-east-1.amazonaws.com/prod';
 
 /**
  * Parsed source structure for display
@@ -14,6 +17,26 @@ interface ParsedSource {
 
 interface CitationDisplayProps {
   sources?: string[];
+}
+
+/**
+ * Fetches a presigned URL for an S3 citation
+ */
+async function getCitationPresignedUrl(s3Uri: string): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}/citation/url`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ s3Uri }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to get citation URL');
+  }
+
+  const data = await response.json();
+  return data.presignedUrl;
 }
 
 /**
@@ -114,8 +137,53 @@ function parseSources(uris: string[]): ParsedSource[] {
 }
 
 /**
+ * Clickable document citation component
+ */
+function DocumentCitation({ source }: { source: ParsedSource }) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleClick = async () => {
+    if (isLoading) return;
+    
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const presignedUrl = await getCitationPresignedUrl(source.originalUri);
+      window.open(presignedUrl, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      console.error('Failed to get citation URL:', err);
+      setError('Failed to open');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={isLoading}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-blue-50 hover:text-blue-700 hover:scale-105 transition-all duration-150 ${
+        isLoading ? 'opacity-50 cursor-wait' : 'cursor-pointer'
+      }`}
+      title={`Open ${source.title}`}
+    >
+      {isLoading ? (
+        <Loader2 className="w-3 h-3 animate-spin" />
+      ) : (
+        <FileText className="w-3 h-3" />
+      )}
+      <span className="max-w-[200px] truncate">{source.title}</span>
+      {error && <span className="text-red-500 text-xs ml-1">!</span>}
+    </button>
+  );
+}
+
+/**
  * CitationDisplay component renders source citations below assistant responses.
- * Website sources are displayed as clickable links, document sources as text labels.
+ * Website sources are displayed as clickable links, document sources as clickable buttons
+ * that fetch presigned URLs on click.
  */
 export default function CitationDisplay({ sources }: CitationDisplayProps) {
   if (!sources || sources.length === 0) {
@@ -145,13 +213,7 @@ export default function CitationDisplay({ sources }: CitationDisplayProps) {
               <span className="max-w-[200px] truncate">{source.title}</span>
             </a>
           ) : (
-            <span
-              key={`${source.originalUri}-${index}`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg"
-            >
-              <FileText className="w-3 h-3" />
-              <span className="max-w-[200px] truncate">{source.title}</span>
-            </span>
+            <DocumentCitation key={`${source.originalUri}-${index}`} source={source} />
           )
         ))}
       </div>
