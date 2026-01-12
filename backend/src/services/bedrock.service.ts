@@ -39,6 +39,8 @@ function cleanResponse(response: string): string {
 export class BedrockService {
   /**
    * Invokes the Bedrock Agent for text-only queries
+   * @param prompt - The user's question
+   * @param sessionId - Session ID for conversation continuity
    */
   async invokeAgent(
     prompt: string,
@@ -50,7 +52,7 @@ export class BedrockService {
         agentAliasId: AGENT_ALIAS_ID,
         sessionId,
         inputText: prompt,
-        // enableTrace: true, // Temporarily disabled - may need IAM permissions
+        enableTrace: true,
       });
 
       const response = await agentClient.send(command);
@@ -127,6 +129,9 @@ export class BedrockService {
    * Analyzes files by extracting content, then passes to Bedrock Agent for knowledge base access
    * Step 1: Extract text from PDFs/Word docs
    * Step 2: Send extracted content + user question to Bedrock Agent
+   * @param prompt - The user's question
+   * @param attachments - File attachments to analyze
+   * @param sessionId - Session ID for conversation continuity
    */
   async analyzeWithAttachments(
     prompt: string,
