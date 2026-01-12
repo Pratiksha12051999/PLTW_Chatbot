@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ExternalLink, FileText, Loader2 } from 'lucide-react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://0yv0e0n3ck.execute-api.us-east-1.amazonaws.com/prod';
+const API_BASE_URL = process.env.NEXT_PUBLIC_REST_API_URL || 'https://4bsllwvey3.execute-api.us-east-1.amazonaws.com/prod';
 
 /**
  * Parsed source structure for display
