@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import CitationDisplay from './CitationDisplay';
 
 
 const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'wss://q76me9fvqa.execute-api.us-east-1.amazonaws.com/prod';
@@ -555,6 +556,10 @@ export default function ChatWindow() {
                       </div>
                     )}
                   </div>
+                  {/* Render citations for assistant messages */}
+                  {msg.role === 'assistant' && msg.metadata?.sources && (
+                    <CitationDisplay sources={msg.metadata.sources} />
+                  )}
                   {/* Render attachments if present (Requirements: 5.2) */}
                   {msg.attachments && msg.attachments.length > 0 && (
                     <MessageAttachments

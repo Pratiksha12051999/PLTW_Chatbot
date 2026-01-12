@@ -50,6 +50,7 @@ export class BedrockService {
         agentAliasId: AGENT_ALIAS_ID,
         sessionId,
         inputText: prompt,
+        // enableTrace: true, // Temporarily disabled - may need IAM permissions
       });
 
       const response = await agentClient.send(command);
@@ -69,8 +70,17 @@ export class BedrockService {
             if (trace.observation?.knowledgeBaseLookupOutput?.retrievedReferences) {
               trace.observation.knowledgeBaseLookupOutput.retrievedReferences.forEach(
                 (ref: any) => {
-                  if (ref.location?.s3Location) {
+                  // Extract S3 location URIs
+                  if (ref.location?.s3Location?.uri) {
                     sources.push(ref.location.s3Location.uri);
+                  }
+                  // Extract web URLs (for web-crawled content)
+                  if (ref.location?.webLocation?.url) {
+                    sources.push(ref.location.webLocation.url);
+                  }
+                  // Extract confluence URLs
+                  if (ref.location?.confluenceLocation?.url) {
+                    sources.push(ref.location.confluenceLocation.url);
                   }
                 }
               );

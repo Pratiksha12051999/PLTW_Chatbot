@@ -21,6 +21,7 @@ The chatbot is designed to serve as the first line of customer support for educa
 ### Key Features
 - **Real-time AI Responses**: WebSocket-based streaming for natural conversation flow
 - **Knowledge Base Integration**: Answers powered by PLTW documentation (pltw.org, knowledge.pltw.org)
+- **Source Citations**: Clickable links to websites and document references below responses
 - **File Attachment Support**: Upload PDFs, Word docs, and images for analysis
 - **Feedback System**: Rate responses to help improve the chatbot
 - **Escalation Detection**: Automatic detection when human support is needed
@@ -64,7 +65,8 @@ As Jordan responds, you'll see:
 1. **Your Message**: Displayed on the right side of the chat
 2. **Typing Indicator**: Shows Jordan is processing your question
 3. **Jordan's Response**: Displayed on the left side with relevant information
-4. **Confidence Indicator**: Jordan may suggest escalation if confidence is low
+4. **Source Citations**: Clickable links and document references below the response
+5. **Confidence Indicator**: Jordan may suggest escalation if confidence is low
 
 ---
 
