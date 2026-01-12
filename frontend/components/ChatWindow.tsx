@@ -374,7 +374,6 @@ export default function ChatWindow() {
     }
   };
 
-  // Check if already authenticated
   const handleAdminClick = () => {
     if (isAuthenticated) {
       router.push('/admin');
@@ -405,16 +404,7 @@ export default function ChatWindow() {
           </div>
         </button>
 
-        {/* Admin Login Button */}
-        <button
-          onClick={handleAdminClick}
-          className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          <User className="w-5 h-5" />
-          <span className="text-sm font-medium">
-            {isAuthenticated ? 'Admin Dashboard' : 'Admin Login'}
-          </span>
-        </button>
+
       </header>
 
       {/* Admin Login Modal */}
