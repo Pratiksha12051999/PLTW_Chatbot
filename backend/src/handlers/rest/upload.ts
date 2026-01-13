@@ -41,7 +41,6 @@ function successResponse<T>(data: T): APIGatewayProxyResult {
  *   POST /upload/presign
  *   POST /upload/confirm
  *   GET /upload/download/{fileId}
- *   POST /citation/url
  */
 export const handler = async (
   event: APIGatewayProxyEvent
@@ -59,8 +58,6 @@ export const handler = async (
       return await confirmUpload(event);
     } else if (path.includes('/download/') && method === 'GET') {
       return await getDownloadUrl(event);
-    } else if (path.endsWith('/citation/url') && method === 'POST') {
-      return await getCitationUrl(event);
     } else {
       return {
         statusCode: 404,
@@ -257,59 +254,5 @@ export const getDownloadUrl = async (
   } catch (error) {
     console.error('Error generating download URL:', error);
     return errorResponse(500, 'DOWNLOAD_URL_FAILED', 'Failed to generate download URL');
-  }
-};
-
-
-/**
- * POST /citation/url
- * Generates a presigned GET URL for a citation source from S3.
- * Used to make knowledge base document citations clickable.
- * 
- * Request body:
- * - s3Uri: string (required) - S3 URI in format s3://bucket/key
- * 
- * Returns:
- * - presignedUrl: string - The presigned URL for viewing/downloading the document
- * - expiresIn: number - URL validity in seconds
- */
-export const getCitationUrl = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
-  try {
-    // Parse request body
-    if (!event.body) {
-      return errorResponse(400, 'MISSING_BODY', 'Request body is required');
-    }
-
-    let request: { s3Uri: string };
-    try {
-      request = JSON.parse(event.body);
-    } catch {
-      return errorResponse(400, 'INVALID_JSON', 'Invalid JSON in request body');
-    }
-
-    const { s3Uri } = request;
-
-    // Validate required fields
-    if (!s3Uri || typeof s3Uri !== 'string') {
-      return errorResponse(400, 'MISSING_S3_URI', 's3Uri is required and must be a string');
-    }
-
-    // Validate S3 URI format
-    if (!s3Uri.startsWith('s3://')) {
-      return errorResponse(400, 'INVALID_S3_URI', 's3Uri must start with s3://');
-    }
-
-    // Generate presigned URL for the citation
-    const presignedUrl = await uploadService.generateCitationPresignedUrl(s3Uri);
-
-    return successResponse({
-      presignedUrl,
-      expiresIn: FILE_UPLOAD_CONFIG.downloadUrlExpirySeconds,
-    });
-  } catch (error) {
-    console.error('Error generating citation URL:', error);
-    return errorResponse(500, 'CITATION_URL_FAILED', 'Failed to generate citation URL');
   }
 };

@@ -37,7 +37,7 @@ export class RestApiStack extends cdk.Stack {
       },
     });
 
-    // 2. Upload Handler - handles /upload/* and /citation/url
+    // 2. Upload Handler - handles /upload/*
     const uploadHandler = new lambda.Function(this, 'UploadHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'upload.handler',
@@ -74,12 +74,6 @@ export class RestApiStack extends cdk.Stack {
     uploadsBucket.grantPut(uploadHandler);
     uploadsBucket.grantRead(uploadHandler);
     fileAttachmentsTable.grantReadWriteData(uploadHandler);
-
-    // Upload handler needs broad S3 read access for citation URLs (knowledge base buckets)
-    uploadHandler.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
-      actions: ['s3:GetObject'],
-      resources: ['arn:aws:s3:::*/*'],
-    }));
 
     // ============================================
     // REST API
@@ -152,16 +146,6 @@ export class RestApiStack extends cdk.Stack {
     const download = upload.addResource('download');
     const downloadFile = download.addResource('{fileId}');
     downloadFile.addMethod('GET', uploadIntegration);
-
-    // ============================================
-    // CITATION ENDPOINT (public)
-    // ============================================
-
-    const citation = this.api.root.addResource('citation');
-    
-    // POST /citation/url
-    const citationUrl = citation.addResource('url');
-    citationUrl.addMethod('POST', uploadIntegration);
 
     // ============================================
     // OUTPUTS

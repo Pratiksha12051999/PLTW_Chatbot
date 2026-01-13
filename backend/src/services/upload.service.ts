@@ -119,34 +119,6 @@ export class UploadService {
   }
 
   /**
-   * Generates a presigned GET URL for a citation source from S3.
-   * Parses S3 URIs (s3://bucket/key) and generates presigned URLs.
-   * 
-   * @param s3Uri - The S3 URI (e.g., s3://bucket-name/path/to/file.pdf)
-   * @returns The presigned download URL
-   */
-  async generateCitationPresignedUrl(s3Uri: string): Promise<string> {
-    // Parse S3 URI: s3://bucket-name/path/to/file.pdf
-    const match = s3Uri.match(/^s3:\/\/([^\/]+)\/(.+)$/);
-    if (!match) {
-      throw new Error('Invalid S3 URI format');
-    }
-
-    const [, bucket, key] = match;
-
-    const command = new GetObjectCommand({
-      Bucket: bucket,
-      Key: key,
-    });
-
-    const presignedUrl = await getSignedUrl(s3Client, command, {
-      expiresIn: FILE_UPLOAD_CONFIG.downloadUrlExpirySeconds,
-    });
-
-    return presignedUrl;
-  }
-
-  /**
    * Creates a file metadata record in DynamoDB.
    * 
    * @param metadata - The file attachment metadata to store
