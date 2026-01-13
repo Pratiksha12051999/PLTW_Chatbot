@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Send, Paperclip, User, RefreshCw, X, CheckCircle, AlertCircle, Loader2, Download, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { useWebSocket, FileAttachment } from '@/hooks/useWebSocket';
 import { useFileUpload, UploadingFile } from '@/hooks/useFileUpload';
@@ -112,19 +112,143 @@ const formatMessageContent = (content: string) => {
   });
 };
 
-// Format inline text (handle **bold** within text)
-const formatInlineText = (text: string) => {
-  const parts = text.split(/(\*\*.*?\*\*)/g);
+// Format inline text (handle **bold**, URLs, and markdown links within text)
+const formatInlineText = (text: string): React.ReactNode => {
+  // First, handle markdown links [text](url)
+  // Then handle plain URLs
+  // Then handle bold text
+  
+  // Regex patterns
+  const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  const urlRegex = /(https?:\/\/[^\s<>"\]]+)/g;
+  const boldRegex = /(\*\*.*?\*\*)/g;
+  
+  // Replace markdown links with placeholders first
+  const links: { placeholder: string; text: string; url: string }[] = [];
+  let processedText = text.replace(markdownLinkRegex, (match, linkText, url) => {
+    const placeholder = `__MDLINK_${links.length}__`;
+    links.push({ placeholder, text: linkText, url });
+    return placeholder;
+  });
+  
+  // Replace plain URLs with placeholders
+  const plainUrls: { placeholder: string; url: string }[] = [];
+  processedText = processedText.replace(urlRegex, (match) => {
+    // Skip if this URL is already part of a markdown link placeholder
+    if (match.includes('__MDLINK_')) return match;
+    const placeholder = `__URL_${plainUrls.length}__`;
+    plainUrls.push({ placeholder, url: match });
+    return placeholder;
+  });
+  
+  // Split by bold markers
+  const parts = processedText.split(boldRegex);
 
   return parts.map((part, idx) => {
+    // Handle bold text
     if (part.startsWith('**') && part.endsWith('**')) {
+      const innerText = part.slice(2, -2);
       return (
         <strong key={idx} className="font-semibold text-gray-900">
-          {part.slice(2, -2)}
+          {renderWithLinks(innerText, links, plainUrls, `bold-${idx}`)}
         </strong>
       );
     }
-    return <span key={idx}>{part}</span>;
+    return <span key={idx}>{renderWithLinks(part, links, plainUrls, `span-${idx}`)}</span>;
+  });
+};
+
+// Helper function to render text with link placeholders replaced
+const renderWithLinks = (
+  text: string, 
+  mdLinks: { placeholder: string; text: string; url: string }[],
+  plainUrls: { placeholder: string; url: string }[],
+  keyPrefix: string
+): React.ReactNode => {
+  // Check if text contains any placeholders
+  const hasPlaceholders = mdLinks.some(l => text.includes(l.placeholder)) || 
+                          plainUrls.some(u => text.includes(u.placeholder));
+  
+  if (!hasPlaceholders) {
+    return text;
+  }
+  
+  // Build regex to split by all placeholders
+  const allPlaceholders = [
+    ...mdLinks.map(l => l.placeholder),
+    ...plainUrls.map(u => u.placeholder)
+  ];
+  const placeholderRegex = new RegExp(`(${allPlaceholders.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
+  
+  const segments = text.split(placeholderRegex);
+  
+  return segments.map((segment, segIdx) => {
+    // Check if this segment is a markdown link placeholder
+    const mdLink = mdLinks.find(l => l.placeholder === segment);
+    if (mdLink) {
+      return (
+        <a
+          key={`${keyPrefix}-md-${segIdx}`}
+          href={mdLink.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 underline hover:no-underline transition-colors break-all"
+        >
+          {mdLink.text}
+          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+        </a>
+      );
+    }
+    
+    // Check if this segment is a plain URL placeholder
+    const plainUrl = plainUrls.find(u => u.placeholder === segment);
+    if (plainUrl) {
+      // Extract a friendly display text from the URL
+      let displayText = plainUrl.url;
+      let domain = '';
+      try {
+        const urlObj = new URL(plainUrl.url);
+        domain = urlObj.hostname.replace('www.', '');
+        const path = urlObj.pathname !== '/' ? urlObj.pathname : '';
+        displayText = domain + path;
+        // Truncate path if too long, keep domain visible
+        if (displayText.length > 40) {
+          displayText = domain + (path.length > 15 ? path.substring(0, 12) + '...' : path);
+        }
+      } catch {
+        // Keep original URL if parsing fails, but truncate
+        if (displayText.length > 40) {
+          displayText = displayText.substring(0, 37) + '...';
+        }
+      }
+      
+      return (
+        <span
+          key={`${keyPrefix}-url-${segIdx}`}
+          className="inline-block my-1"
+        >
+          <a
+            href={plainUrl.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-2 py-1 bg-blue-50 text-blue-700 text-sm rounded-md hover:bg-blue-100 transition-colors max-w-full"
+            title={plainUrl.url}
+          >
+            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            <span className="truncate">{displayText}</span>
+            <svg className="w-3 h-3 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        </span>
+      );
+    }
+    
+    return segment;
   });
 };
 
