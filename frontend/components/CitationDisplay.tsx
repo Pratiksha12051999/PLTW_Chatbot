@@ -5,6 +5,8 @@ import { ExternalLink, FileText, Loader2 } from 'lucide-react';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_REST_API_URL || 'https://4bsllwvey3.execute-api.us-east-1.amazonaws.com/prod';
 
+// Citation API endpoint for fetching presigned URLs
+
 /**
  * Parsed source structure for display
  */

@@ -1,4 +1,33 @@
+import { fetchAuthSession } from 'aws-amplify/auth';
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_REST_API_URL || '';
+
+/**
+ * Gets the current user's JWT token for authenticated API calls
+ */
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const session = await fetchAuthSession();
+    return session.tokens?.idToken?.toString() || null;
+  } catch (error) {
+    console.error('Failed to get auth token:', error);
+    return null;
+  }
+}
+
+/**
+ * Creates headers with optional Authorization token
+ */
+async function getAuthHeaders(): Promise<HeadersInit> {
+  const token = await getAuthToken();
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = token;
+  }
+  return headers;
+}
 
 export interface MetricsResponse {
   totalConversations: number;
@@ -49,43 +78,47 @@ export interface FeedbackRequest {
 }
 
 export const adminAPI = {
-  // Get metrics for a specific time period
+  // Get metrics for a specific time period (requires authentication)
   getMetrics: async (days: number = 7): Promise<MetricsResponse> => {
+    const headers = await getAuthHeaders();
     const response = await fetch(`${API_BASE_URL}/admin/metrics?day=${days}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Unauthorized - please log in');
+      }
       throw new Error('Failed to fetch metrics');
     }
 
     return response.json();
   },
 
-  // Get conversations by category
+  // Get conversations by category (requires authentication)
   getConversations: async (category?: string): Promise<{ conversations: Conversation[] }> => {
     const url = category
       ? `${API_BASE_URL}/admin/conversations?category=${encodeURIComponent(category)}`
       : `${API_BASE_URL}/admin/conversations`;
 
+    const headers = await getAuthHeaders();
     const response = await fetch(url, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Unauthorized - please log in');
+      }
       throw new Error('Failed to fetch conversations');
     }
 
     return response.json();
   },
 
-  // Submit feedback
+  // Submit feedback (public endpoint)
   submitFeedback: async (feedback: FeedbackRequest): Promise<{ message: string }> => {
     const response = await fetch(`${API_BASE_URL}/feedback`, {
       method: 'POST',

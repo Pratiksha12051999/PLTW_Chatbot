@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import * as path from 'path';
@@ -10,6 +11,7 @@ interface RestApiStackProps extends cdk.StackProps {
   conversationsTable: dynamodb.Table;
   fileAttachmentsTable: dynamodb.Table;
   uploadsBucket: s3.IBucket;
+  userPool: cognito.IUserPool;
 }
 
 export class RestApiStack extends cdk.Stack {
@@ -18,7 +20,7 @@ export class RestApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: RestApiStackProps) {
     super(scope, id, props);
 
-    const { conversationsTable, fileAttachmentsTable, uploadsBucket } = props;
+    const { conversationsTable, fileAttachmentsTable, uploadsBucket, userPool } = props;
 
     // Admin metrics handler
     const metricsHandler = new lambda.Function(this, 'MetricsHandler', {
@@ -134,13 +136,26 @@ export class RestApiStack extends cdk.Stack {
       },
     });
 
-    // Admin endpoints
+    // Create Cognito authorizer for admin endpoints
+    const cognitoAuthorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'AdminAuthorizer', {
+      cognitoUserPools: [userPool],
+      authorizerName: 'AdminCognitoAuthorizer',
+      identitySource: 'method.request.header.Authorization',
+    });
+
+    // Admin endpoints (protected by Cognito)
     const admin = this.api.root.addResource('admin');
     const metrics = admin.addResource('metrics');
-    metrics.addMethod('GET', new apigateway.LambdaIntegration(metricsHandler));
+    metrics.addMethod('GET', new apigateway.LambdaIntegration(metricsHandler), {
+      authorizer: cognitoAuthorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
 
     const conversations = admin.addResource('conversations');
-    conversations.addMethod('GET', new apigateway.LambdaIntegration(conversationsHandler));
+    conversations.addMethod('GET', new apigateway.LambdaIntegration(conversationsHandler), {
+      authorizer: cognitoAuthorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
 
     // Feedback endpoint
     const feedback = this.api.root.addResource('feedback');

@@ -57,6 +57,7 @@ const restApiStack = new RestApiStack(app, 'RestApiStack', {
   conversationsTable: dynamoDBStack.conversationsTable,
   fileAttachmentsTable: dynamoDBStack.fileAttachmentsTable,
   uploadsBucket: s3Stack.uploadsBucket,
+  userPool: cognitoStack.userPool,
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
@@ -67,6 +68,7 @@ webSocketStack.addDependency(dynamoDBStack);
 webSocketStack.addDependency(s3Stack);
 restApiStack.addDependency(dynamoDBStack);
 restApiStack.addDependency(s3Stack);
+restApiStack.addDependency(cognitoStack);
 
 
 // Amplify Stack (only if GitHub credentials provided)
