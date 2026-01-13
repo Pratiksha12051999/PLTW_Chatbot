@@ -4,6 +4,49 @@ import { AdminMetrics, Conversation } from '../../types/index.js';
 
 const dynamoDBService = new DynamoDBService();
 
+// Standard CORS headers
+const corsHeaders = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+};
+
+/**
+ * Unified Admin Handler - routes requests based on path
+ * Handles: GET /admin/metrics, GET /admin/conversations
+ */
+export const handler = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
+  const path = event.path;
+  const method = event.httpMethod;
+
+  console.log(`Admin handler: ${method} ${path}`);
+
+  try {
+    // Route based on path
+    if (path.endsWith('/metrics') && method === 'GET') {
+      return await getMetrics(event);
+    } else if (path.endsWith('/conversations') && method === 'GET') {
+      return await getConversations(event);
+    } else {
+      return {
+        statusCode: 404,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: 'Not found' }),
+      };
+    }
+  } catch (error) {
+    console.error('Admin handler error:', error);
+    return {
+      statusCode: 500,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: 'Internal server error' }),
+    };
+  }
+};
+
 export const getMetrics = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {

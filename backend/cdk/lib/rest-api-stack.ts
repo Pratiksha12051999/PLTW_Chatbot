@@ -22,10 +22,14 @@ export class RestApiStack extends cdk.Stack {
 
     const { conversationsTable, fileAttachmentsTable, uploadsBucket, userPool } = props;
 
-    // Admin metrics handler
-    const metricsHandler = new lambda.Function(this, 'MetricsHandler', {
+    // ============================================
+    // CONSOLIDATED LAMBDA FUNCTIONS (3 total)
+    // ============================================
+
+    // 1. Admin Handler - handles /admin/metrics and /admin/conversations
+    const adminHandler = new lambda.Function(this, 'AdminHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'admin.getMetrics',
+      handler: 'admin.handler',
       code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda-bundle')),
       timeout: cdk.Duration.seconds(30),
       environment: {
@@ -33,21 +37,22 @@ export class RestApiStack extends cdk.Stack {
       },
     });
 
-    // Conversations handler
-    const conversationsHandler = new lambda.Function(this, 'ConversationsHandler', {
+    // 2. Upload Handler - handles /upload/* and /citation/url
+    const uploadHandler = new lambda.Function(this, 'UploadHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'admin.getConversations',
+      handler: 'upload.handler',
       code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda-bundle')),
-      timeout: cdk.Duration.seconds(30),
+      timeout: cdk.Duration.seconds(10),
       environment: {
-        CONVERSATIONS_TABLE: conversationsTable.tableName,
+        FILE_ATTACHMENTS_TABLE: fileAttachmentsTable.tableName,
+        UPLOADS_BUCKET: uploadsBucket.bucketName,
       },
     });
 
-    // Feedback handler
+    // 3. Feedback Handler - handles /feedback
     const feedbackHandler = new lambda.Function(this, 'FeedbackHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'feedback.submitFeedback',
+      handler: 'feedback.handler',
       code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda-bundle')),
       timeout: cdk.Duration.seconds(10),
       environment: {
@@ -55,77 +60,31 @@ export class RestApiStack extends cdk.Stack {
       },
     });
 
-    // Grant DynamoDB permissions
-    conversationsTable.grantReadData(metricsHandler);
-    conversationsTable.grantReadData(conversationsHandler);
+    // ============================================
+    // PERMISSIONS
+    // ============================================
+
+    // Admin handler - read access to conversations table
+    conversationsTable.grantReadData(adminHandler);
+
+    // Feedback handler - read/write access to conversations table
     conversationsTable.grantReadWriteData(feedbackHandler);
 
-    // Upload presign handler - POST /upload/presign
-    const presignUploadHandler = new lambda.Function(this, 'PresignUploadHandler', {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'upload.presignUpload',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda-bundle')),
-      timeout: cdk.Duration.seconds(10),
-      environment: {
-        FILE_ATTACHMENTS_TABLE: fileAttachmentsTable.tableName,
-        UPLOADS_BUCKET: uploadsBucket.bucketName,
-      },
-    });
+    // Upload handler - S3 and DynamoDB permissions
+    uploadsBucket.grantPut(uploadHandler);
+    uploadsBucket.grantRead(uploadHandler);
+    fileAttachmentsTable.grantReadWriteData(uploadHandler);
 
-    // Upload confirm handler - POST /upload/confirm
-    const confirmUploadHandler = new lambda.Function(this, 'ConfirmUploadHandler', {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'upload.confirmUpload',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda-bundle')),
-      timeout: cdk.Duration.seconds(10),
-      environment: {
-        FILE_ATTACHMENTS_TABLE: fileAttachmentsTable.tableName,
-        UPLOADS_BUCKET: uploadsBucket.bucketName,
-      },
-    });
-
-    // Download URL handler - GET /upload/download/{fileId}
-    const downloadUrlHandler = new lambda.Function(this, 'DownloadUrlHandler', {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'upload.getDownloadUrl',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda-bundle')),
-      timeout: cdk.Duration.seconds(10),
-      environment: {
-        FILE_ATTACHMENTS_TABLE: fileAttachmentsTable.tableName,
-        UPLOADS_BUCKET: uploadsBucket.bucketName,
-      },
-    });
-
-    // Citation URL handler - POST /citation/url
-    const citationUrlHandler = new lambda.Function(this, 'CitationUrlHandler', {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'upload.getCitationUrl',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda-bundle')),
-      timeout: cdk.Duration.seconds(10),
-      environment: {
-        FILE_ATTACHMENTS_TABLE: fileAttachmentsTable.tableName,
-        UPLOADS_BUCKET: uploadsBucket.bucketName,
-      },
-    });
-
-    // Grant S3 permissions (PutObject, GetObject) to upload handlers
-    uploadsBucket.grantPut(presignUploadHandler);
-    uploadsBucket.grantRead(downloadUrlHandler);
-    // Presign handler needs GetObject for generating presigned URLs
-    uploadsBucket.grantRead(presignUploadHandler);
-
-    // Citation handler needs broad S3 read access for knowledge base buckets
-    citationUrlHandler.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+    // Upload handler needs broad S3 read access for citation URLs (knowledge base buckets)
+    uploadHandler.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
       actions: ['s3:GetObject'],
-      resources: ['arn:aws:s3:::*/*'],  // Access to any S3 bucket for citations
+      resources: ['arn:aws:s3:::*/*'],
     }));
 
-    // Grant DynamoDB permissions for file attachments table
-    fileAttachmentsTable.grantReadWriteData(presignUploadHandler);
-    fileAttachmentsTable.grantReadWriteData(confirmUploadHandler);
-    fileAttachmentsTable.grantReadData(downloadUrlHandler);
+    // ============================================
+    // REST API
+    // ============================================
 
-    // Create REST API
     this.api = new apigateway.RestApi(this, 'PLTWRestApi', {
       restApiName: 'pltw-chatbot-rest-api',
       description: 'REST API for PLTW Chatbot Admin',
@@ -143,48 +102,71 @@ export class RestApiStack extends cdk.Stack {
       identitySource: 'method.request.header.Authorization',
     });
 
-    // Admin endpoints (protected by Cognito)
+    // Lambda integrations
+    const adminIntegration = new apigateway.LambdaIntegration(adminHandler);
+    const uploadIntegration = new apigateway.LambdaIntegration(uploadHandler);
+    const feedbackIntegration = new apigateway.LambdaIntegration(feedbackHandler);
+
+    // ============================================
+    // ADMIN ENDPOINTS (protected by Cognito)
+    // ============================================
+
     const admin = this.api.root.addResource('admin');
+    
+    // GET /admin/metrics
     const metrics = admin.addResource('metrics');
-    metrics.addMethod('GET', new apigateway.LambdaIntegration(metricsHandler), {
+    metrics.addMethod('GET', adminIntegration, {
       authorizer: cognitoAuthorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
 
+    // GET /admin/conversations
     const conversations = admin.addResource('conversations');
-    conversations.addMethod('GET', new apigateway.LambdaIntegration(conversationsHandler), {
+    conversations.addMethod('GET', adminIntegration, {
       authorizer: cognitoAuthorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
 
-    // Feedback endpoint
-    const feedback = this.api.root.addResource('feedback');
-    feedback.addMethod('POST', new apigateway.LambdaIntegration(feedbackHandler));
+    // ============================================
+    // FEEDBACK ENDPOINT (public)
+    // ============================================
 
-    // Upload endpoints
+    const feedback = this.api.root.addResource('feedback');
+    feedback.addMethod('POST', feedbackIntegration);
+
+    // ============================================
+    // UPLOAD ENDPOINTS (public)
+    // ============================================
+
     const upload = this.api.root.addResource('upload');
     
-    // POST /upload/presign - Generate presigned URL for upload
+    // POST /upload/presign
     const presign = upload.addResource('presign');
-    presign.addMethod('POST', new apigateway.LambdaIntegration(presignUploadHandler));
+    presign.addMethod('POST', uploadIntegration);
 
-    // POST /upload/confirm - Confirm upload completion
+    // POST /upload/confirm
     const confirm = upload.addResource('confirm');
-    confirm.addMethod('POST', new apigateway.LambdaIntegration(confirmUploadHandler));
+    confirm.addMethod('POST', uploadIntegration);
 
-    // GET /upload/download/{fileId} - Get download URL
+    // GET /upload/download/{fileId}
     const download = upload.addResource('download');
     const downloadFile = download.addResource('{fileId}');
-    downloadFile.addMethod('GET', new apigateway.LambdaIntegration(downloadUrlHandler));
+    downloadFile.addMethod('GET', uploadIntegration);
 
-    // Citation endpoint
+    // ============================================
+    // CITATION ENDPOINT (public)
+    // ============================================
+
     const citation = this.api.root.addResource('citation');
     
-    // POST /citation/url - Get presigned URL for citation source
+    // POST /citation/url
     const citationUrl = citation.addResource('url');
-    citationUrl.addMethod('POST', new apigateway.LambdaIntegration(citationUrlHandler));
+    citationUrl.addMethod('POST', uploadIntegration);
 
-    // Outputs
+    // ============================================
+    // OUTPUTS
+    // ============================================
+
     new cdk.CfnOutput(this, 'RestApiUrl', {
       value: this.api.url,
       description: 'REST API URL',

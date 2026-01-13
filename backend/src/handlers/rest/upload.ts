@@ -36,6 +36,49 @@ function successResponse<T>(data: T): APIGatewayProxyResult {
 }
 
 /**
+ * Unified Upload Handler - routes requests based on path and method
+ * Handles: 
+ *   POST /upload/presign
+ *   POST /upload/confirm
+ *   GET /upload/download/{fileId}
+ *   POST /citation/url
+ */
+export const handler = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
+  const path = event.path;
+  const method = event.httpMethod;
+
+  console.log(`Upload handler: ${method} ${path}`);
+
+  try {
+    // Route based on path and method
+    if (path.endsWith('/presign') && method === 'POST') {
+      return await presignUpload(event);
+    } else if (path.endsWith('/confirm') && method === 'POST') {
+      return await confirmUpload(event);
+    } else if (path.includes('/download/') && method === 'GET') {
+      return await getDownloadUrl(event);
+    } else if (path.endsWith('/citation/url') && method === 'POST') {
+      return await getCitationUrl(event);
+    } else {
+      return {
+        statusCode: 404,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: 'Not found' }),
+      };
+    }
+  } catch (error) {
+    console.error('Upload handler error:', error);
+    return {
+      statusCode: 500,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: 'Internal server error' }),
+    };
+  }
+};
+
+/**
  * POST /upload/presign
  * Generates a presigned URL for uploading a file to S3.
  * 

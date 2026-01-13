@@ -3,6 +3,36 @@ import { DynamoDBService } from '../../services/dynamodb.service.js';
 
 const dynamoDBService = new DynamoDBService();
 
+// Standard CORS headers
+const corsHeaders = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+};
+
+/**
+ * Unified Feedback Handler
+ * Handles: POST /feedback
+ */
+export const handler = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
+  const method = event.httpMethod;
+
+  console.log(`Feedback handler: ${method} ${event.path}`);
+
+  if (method === 'POST') {
+    return await submitFeedback(event);
+  }
+
+  return {
+    statusCode: 404,
+    headers: corsHeaders,
+    body: JSON.stringify({ error: 'Not found' }),
+  };
+};
+
 export const submitFeedback = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
