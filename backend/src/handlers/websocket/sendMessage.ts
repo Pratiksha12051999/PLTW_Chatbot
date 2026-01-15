@@ -3,6 +3,7 @@ import { DynamoDBService } from '../../services/dynamodb.service.js';
 import { BedrockService } from '../../services/bedrock.service.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { UploadService } from '../../services/upload.service.js';
+import { TranslateService } from '../../services/translate.service.js';
 import {
   Message,
   Conversation,
@@ -15,6 +16,7 @@ import { v4 as uuidv4 } from 'uuid';
 const dynamoDBService = new DynamoDBService();
 const bedrockService = new BedrockService();
 const uploadService = new UploadService();
+const translateService = new TranslateService();
 
 export const handler = async (
   event: WebSocketMessageEvent
@@ -25,10 +27,11 @@ export const handler = async (
 
   try {
     const body: WebSocketMessage = JSON.parse(event.body || '{}');
-    const { message, conversationId: existingConversationId, action, category, fileIds } = body;
+    const { message, conversationId: existingConversationId, action, category, fileIds, language = 'en' } = body;
 
     console.log(`Received action: ${action} from connection: ${connectionId}`);
     console.log(`FileIds received: ${JSON.stringify(fileIds)}`);
+    console.log(`Language: ${language}`);
 
     if (action === 'escalate') {
       await handleEscalation(connectionId, existingConversationId!, wsService);
@@ -86,14 +89,28 @@ export const handler = async (
       message: userMessage,
     });
 
+    // Translate user message to English if Spanish is selected
+    let messageForBedrock = message!;
+    if (language === 'es') {
+      messageForBedrock = await translateService.translateToEnglish(message!);
+      console.log(`Translated user message to English: ${messageForBedrock}`);
+    }
+
     const { response, confidence, sources } = attachments && attachments.length > 0 && bedrockService.hasAnalyzableAttachments(attachments)
-      ? await bedrockService.analyzeWithAttachments(message!, attachments, conversationId)
-      : await bedrockService.invokeAgent(message!, conversationId);
+      ? await bedrockService.analyzeWithAttachments(messageForBedrock, attachments, conversationId)
+      : await bedrockService.invokeAgent(messageForBedrock, conversationId);
+
+    // Translate response to Spanish if Spanish is selected
+    let finalResponse = response;
+    if (language === 'es') {
+      finalResponse = await translateService.translateToSpanish(response);
+      console.log(`Translated response to Spanish: ${finalResponse}`);
+    }
 
     const assistantMessage: Message = {
       messageId: uuidv4(),
       conversationId,
-      content: response,
+      content: finalResponse,
       role: 'assistant',
       timestamp: Date.now(),
       metadata: { confidence, sources },

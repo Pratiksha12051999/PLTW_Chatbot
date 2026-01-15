@@ -7,6 +7,7 @@ import { useFileUpload, UploadingFile } from '@/hooks/useFileUpload';
 import { getDownloadUrl } from '@/lib/uploadApi';
 import { adminAPI } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { formatDistanceToNow } from 'date-fns';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -14,49 +15,6 @@ import CitationDisplay from './CitationDisplay';
 
 
 const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'wss://q76me9fvqa.execute-api.us-east-1.amazonaws.com/prod';
-
-const popularTopics = [
-  {
-    title: 'Implementation',
-    icon: '📚',
-    questions: [
-      'How do I implement PLTW in my school?',
-      'What support is available during implementation?'
-    ]
-  },
-  {
-    title: 'Rostering',
-    icon: '👥',
-    questions: [
-      'How do I upload student rosters?',
-      'Can I integrate with my Student Information System?'
-    ]
-  },
-  {
-    title: 'Training',
-    icon: '🎓',
-    questions: [
-      'What professional development is available?',
-      'Is training available online or in-person?'
-    ]
-  },
-  {
-    title: 'Payment',
-    icon: '💳',
-    questions: [
-      'What are the program fees?',
-      'What payment options are available?'
-    ]
-  },
-  {
-    title: 'Grants',
-    icon: '🏆',
-    questions: [
-      'What grants are available for PLTW?',
-      'Can PLTW help with grant applications?'
-    ]
-  }
-];
 
 // Clean text by removing content in square brackets
 const cleanText = (text: string): string => {
@@ -377,6 +335,13 @@ export default function ChatWindow() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  
+  const { language, setLanguage, translations } = useLanguage();
+  
+  // Get topics from translations based on current language
+  const currentTranslations = translations[language];
+  const topicKeys = Object.keys(currentTranslations.topics) as Array<keyof typeof currentTranslations.topics>;
+  const popularTopics = topicKeys.map(key => currentTranslations.topics[key]);
 
   const {
     isConnected,
@@ -420,7 +385,7 @@ export default function ChatWindow() {
     const fileIds = getUploadedFileIds();
     console.log('Sending message with fileIds:', fileIds);
 
-    sendMessage(messageToSend, category, fileIds.length > 0 ? fileIds : undefined);
+    sendMessage(messageToSend, category, fileIds.length > 0 ? fileIds : undefined, language);
     setInputMessage('');
     setShowWelcome(false);
     
@@ -528,6 +493,32 @@ export default function ChatWindow() {
             <p className="text-sm text-gray-600">PLTW Support Assistant</p>
           </div>
         </button>
+
+        {/* Language Toggle */}
+        <div className="flex items-center bg-gray-100 rounded-lg p-1">
+          <button
+            onClick={() => setLanguage('en')}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+              language === 'en'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+            title="English"
+          >
+            EN
+          </button>
+          <button
+            onClick={() => setLanguage('es')}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+              language === 'es'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+            title="Español"
+          >
+            ES
+          </button>
+        </div>
 
 
       </header>
@@ -639,16 +630,16 @@ export default function ChatWindow() {
                 />
               </div>
               <h2 className="text-4xl font-bold text-gray-900 mb-3">
-                Hello! I&apos;m Jordan
+                {currentTranslations.welcomeTitle}
               </h2>
               <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                I&apos;m happy to help educators with questions about implementation, training, rostering, assessments, payment, and grants.
+                {currentTranslations.welcomeSubtitle}
               </p>
             </div>
 
             <div>
               <h3 className="text-center text-gray-700 font-medium mb-8 text-lg">
-                Popular topics and FAQs:
+                {currentTranslations.popularTopics}
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

@@ -92,6 +92,7 @@ export interface WebSocketMessage {
   conversationId?: string;
   category?: string;
   fileIds?: string[];
+  language?: 'en' | 'es';
 }
 
 export interface WebSocketResponse {

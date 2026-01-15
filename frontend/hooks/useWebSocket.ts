@@ -172,7 +172,7 @@ export const useWebSocket = (url: string) => {
     };
   }, [url]);
 
-  const sendMessage = useCallback((content: string, category: string = 'General', fileIds?: string[]) => {
+  const sendMessage = useCallback((content: string, category: string = 'General', fileIds?: string[], language: 'en' | 'es' = 'en') => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       // Immediately show typing indicator to prevent blank screen
       setIsTyping(true);
@@ -185,11 +185,13 @@ export const useWebSocket = (url: string) => {
         conversationId: string | null;
         category: string;
         fileIds?: string[];
+        language: 'en' | 'es';
       } = {
         action: 'sendMessage',
         message: content,
         conversationId,
-        category
+        category,
+        language
       };
       
       // Include fileIds if provided (Requirement 4.6)
