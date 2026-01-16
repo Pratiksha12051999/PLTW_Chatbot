@@ -41,7 +41,7 @@ PLTW Support Assistant (Jordan) is a conversational AI assistant designed to ser
 
 ## Architecture Diagram
 
-![Architecture Diagram](./docs/media/architecture.png)
+![Architecture Diagram](./PLTW%20Chatbot%20Arch.png)
 
 The application implements a serverless architecture on AWS, combining:
 
