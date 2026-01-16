@@ -8,8 +8,6 @@ An intelligent AI-powered customer support chatbot that helps US PreK-12 educato
   <img src="./docs/media/user-interface.gif" alt="PLTW Support Assistant Demo" width="640" />
 </p>
 
-> **Note:** Please add a demo GIF at `docs/media/user-interface.gif`
-
 ## Index
 
 | Description | Link |
@@ -32,10 +30,9 @@ PLTW Support Assistant (Jordan) is a conversational AI assistant designed to ser
 - **AI-Powered Conversations** using AWS Bedrock Agent with Knowledge Base integration
 - **Real-time Streaming Responses** via WebSocket API for a natural chat experience
 - **Knowledge Base Integration** with PLTW documentation (pltw.org, knowledge.pltw.org, curriculum resources)
-- **Citation Support** with source references and links to documentation
-- **Feedback Mechanism** with thumbs up/thumbs down to collect user satisfaction data
+- **Feedback Mechanism** to collect user satisfaction data
 - **File Attachment Support** for sharing and analyzing documents (PDFs, Word docs, images)
-- **Escalation Detection** automatically identifies queries that need human follow-up and provides Solution Center contact information
+- **Escalation Detection** identifies queries that needs escalation or human intervention
 - **Admin Dashboard** for monitoring conversations, feedback, analytics, and conversation logs
 - **Conversation History** to track and review past interactions
 - **Multi-category Support** for organizing conversations by topic
@@ -154,17 +151,7 @@ For developers looking to extend or customize this project, see [docs/modificati
 ```
 
 ## Credits
-
-This application was developed by:
-
-**Associate Cloud Developers:**
-- <a href="https://www.linkedin.com/in/pratikshawadibhasme/" target="_blank">Pratiksha Wadibhasme</a>
-
-**UI/UX Designers:**
-- <a href="https://www.linkedin.com/in/omdevsinhzala/" target="_blank">Omdevsinh Zala</a>
-
-Built in collaboration with the ASU Cloud Innovation Center and Project Lead The Way.
+This application was architected and developed by [Pratiksha Wadibhasme](https://www.linkedin.com/in/pratikshawadibhasme/), [Sreeram Sreedhar](https://www.linkedin.com/in/sreeram-sreedhar/), and [Omdevsinh Zala](https://www.linkedin.com/in/omdevsinhzala/), with solutions architect [Arun Arunachalam](https://www.linkedin.com/in/arunarunachalam/), program manager [Thomas Orr](https://www.linkedin.com/in/thomas-orr/) and product manager [Rachel Hayden](https://www.linkedin.com/in/rachelhayden/). Thanks to the ASU Cloud Innovation Centre Technical and Project Management teams for their guidance and support.
 
 ## License
-
-Private - ASU CIC Project
+This project is distributed under the [MIT License](LICENSE).

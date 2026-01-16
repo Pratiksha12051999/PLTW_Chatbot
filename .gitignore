@@ -155,4 +155,5 @@ pnpm-lock.yaml
 # ========================================
 .turbo
 .vercel
-.eslintcache
+.eslintcache*.env
+.env*
