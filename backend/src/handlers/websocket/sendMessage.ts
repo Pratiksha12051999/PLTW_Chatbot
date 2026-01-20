@@ -67,7 +67,9 @@ export const handler = async (
       await dynamoDBService.saveConversation(conversation);
 
       // Fire-and-forget categorization for new conversations without FAQ category
-      if (!category || category === 'general') {
+      const shouldCategorize = !category || category.toLowerCase() === 'general';
+      console.log(`[Categorization] Checking trigger condition - category: "${category}", shouldTrigger: ${shouldCategorize}`);
+      if (shouldCategorize) {
         categorizationService.categorizeConversationAsync(conversationId, message!);
       }
     }

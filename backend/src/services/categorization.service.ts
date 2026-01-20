@@ -90,11 +90,19 @@ export class CategorizationService {
     const category = await this.classifyMessage(firstMessage, conversationId);
     
     try {
-      const updated = await this.dynamoDBService.updateCategoryIfMatch(
+      let updated = await this.dynamoDBService.updateCategoryIfMatch(
         conversationId,
         category,
-        'general'
+        'General'
       );
+      
+      if (!updated) {
+        updated = await this.dynamoDBService.updateCategoryIfMatch(
+          conversationId,
+          category,
+          'general'
+        );
+      }
 
       if (updated) {
         console.log('[Categorization] Category update successful', {
@@ -133,6 +141,7 @@ export class CategorizationService {
     );
 
     try {
+      // Nova Pro request format - content is an array with {text: "..."} objects
       const command = new InvokeModelCommand({
         modelId: NOVA_PRO_CONFIG.modelId,
         contentType: 'application/json',
@@ -141,7 +150,7 @@ export class CategorizationService {
           messages: [
             {
               role: 'user',
-              content: [{ type: 'text', text: prompt }],
+              content: [{ text: prompt }],
             },
           ],
           inferenceConfig: {
@@ -157,11 +166,18 @@ export class CategorizationService {
 
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
       
-      // Extract text from Nova Pro response format
+      console.log('[Categorization] Nova Pro raw response:', JSON.stringify(responseBody));
+      
       if (responseBody.output?.message?.content?.[0]?.text) {
         return responseBody.output.message.content[0].text;
       }
       
+      // Fallback for simpler response format
+      if (typeof responseBody.output?.message?.content === 'string') {
+        return responseBody.output.message.content;
+      }
+      
+      console.log('[Categorization] Unexpected response format:', JSON.stringify(responseBody));
       return '';
     } finally {
       clearTimeout(timeoutId);
