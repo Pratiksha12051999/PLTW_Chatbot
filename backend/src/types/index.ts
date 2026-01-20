@@ -53,13 +53,23 @@ export interface Message {
   };
 }
 
+// Conversation category type for LLM-powered categorization
+export type ConversationCategory =
+  | 'Implementation'
+  | 'Rostering'
+  | 'Training'
+  | 'Payment'
+  | 'Grants'
+  | 'Others'
+  | 'general'; // Default for uncategorized
+
 export interface Conversation {
   conversationId: string;
   userId: string;
   startTime: number;
   endTime?: number;
   status: 'active' | 'resolved' | 'escalated';
-  category?: string;
+  category?: ConversationCategory;
   messages: Message[];
   satisfaction?: 'positive' | 'negative';
   escalationReason?: 'no_answer' | 'user_not_satisfied' | 'requested_agent';

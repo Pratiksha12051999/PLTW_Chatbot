@@ -133,4 +133,36 @@ export class DynamoDBService {
       .sort((a, b) => b.startTime - a.startTime)
       .slice(0, limit);
   }
+
+  /**
+   * Updates conversation category only if current category matches expected value.
+   * Returns true if update succeeded, false if condition failed.
+   */
+  async updateCategoryIfMatch(
+    conversationId: string,
+    newCategory: string,
+    expectedCurrentCategory: string
+  ): Promise<boolean> {
+    try {
+      await docClient.send(
+        new UpdateCommand({
+          TableName: CONVERSATIONS_TABLE,
+          Key: { conversationId },
+          UpdateExpression: 'SET category = :newCategory',
+          ConditionExpression: 'category = :expectedCategory OR attribute_not_exists(category)',
+          ExpressionAttributeValues: {
+            ':newCategory': newCategory,
+            ':expectedCategory': expectedCurrentCategory,
+          },
+        })
+      );
+      return true;
+    } catch (error: any) {
+      if (error.name === 'ConditionalCheckFailedException') {
+        // Category was already updated by another process
+        return false;
+      }
+      throw error;
+    }
+  }
 }

@@ -4,9 +4,11 @@ import { BedrockService } from '../../services/bedrock.service.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { UploadService } from '../../services/upload.service.js';
 import { TranslateService } from '../../services/translate.service.js';
+import { CategorizationService } from '../../services/categorization.service.js';
 import {
   Message,
   Conversation,
+  ConversationCategory,
   WebSocketMessage,
   WebSocketMessageEvent,
   FileAttachment
@@ -17,6 +19,7 @@ const dynamoDBService = new DynamoDBService();
 const bedrockService = new BedrockService();
 const uploadService = new UploadService();
 const translateService = new TranslateService();
+const categorizationService = new CategorizationService(dynamoDBService);
 
 export const handler = async (
   event: WebSocketMessageEvent
@@ -59,9 +62,14 @@ export const handler = async (
         startTime: Date.now(),
         status: 'active',
         messages: [],
-        category: category || 'general',
+        category: (category as ConversationCategory) || 'general',
       };
       await dynamoDBService.saveConversation(conversation);
+
+      // Fire-and-forget categorization for new conversations without FAQ category
+      if (!category || category === 'general') {
+        categorizationService.categorizeConversationAsync(conversationId, message!);
+      }
     }
 
     // Fetch and validate file attachments if fileIds are provided

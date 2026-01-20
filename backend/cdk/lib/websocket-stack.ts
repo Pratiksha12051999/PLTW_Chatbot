@@ -63,6 +63,7 @@ export class WebSocketStack extends cdk.Stack {
         UPLOADS_BUCKET: uploadsBucket.bucketName,
         BEDROCK_AGENT_ID: process.env.BEDROCK_AGENT_ID || '',
         BEDROCK_AGENT_ALIAS_ID: process.env.BEDROCK_AGENT_ALIAS_ID || '',
+        NOVA_PRO_MODEL_ID: process.env.NOVA_PRO_MODEL_ID || 'amazon.nova-pro-v1:0',
       },
     });
 
@@ -87,6 +88,26 @@ export class WebSocketStack extends cdk.Stack {
           'bedrock:Retrieve',
           'bedrock:RetrieveAndGenerate'
         ],
+        resources: ['*'],
+      })
+    );
+
+    // Explicit permission for Nova Pro model used in conversation categorization
+    sendMessageHandler.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['bedrock:InvokeModel'],
+        resources: [
+          `arn:aws:bedrock:${this.region}::foundation-model/amazon.nova-pro-v1:0`,
+        ],
+      })
+    );
+
+    // AWS Translate permissions for sendMessageHandler
+    sendMessageHandler.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['translate:TranslateText'],
         resources: ['*'],
       })
     );
