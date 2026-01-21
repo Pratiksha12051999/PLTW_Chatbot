@@ -253,7 +253,7 @@ export default function AdminDashboard() {
             <TopCategoriesChart data={metrics.topCategories} />
           </div>
 
-          {/* User Satisfaction Donut - Placeholder */}
+          {/* User Satisfaction Donut */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">User Satisfaction</h3>
             <UserSatisfactionChart satisfactionPercentage={metrics.overallSatisfaction} />
@@ -287,9 +287,6 @@ export default function AdminDashboard() {
                     Topic Category
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Sentiment
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -299,35 +296,22 @@ export default function AdminDashboard() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {conversations.slice(0, 10).map((conv, idx) => {
-                  // Determine sentiment: explicit feedback takes precedence, then LLM analysis
-                  const sentiment = conv.satisfaction || conv.sentiment || 'pending';
+                  // Determine status: explicit feedback takes precedence, then LLM analysis
+                  const status = conv.satisfaction || conv.sentiment || 'pending';
                   
-                  // Sentiment badge styling
-                  const sentimentStyles: Record<string, string> = {
+                  // Status badge styling
+                  const statusStyles: Record<string, string> = {
                     positive: 'bg-green-100 text-green-800',
                     negative: 'bg-red-100 text-red-800',
                     neutral: 'bg-gray-100 text-gray-800',
                     pending: 'bg-yellow-100 text-yellow-800',
                   };
                   
-                  const sentimentLabels: Record<string, string> = {
-                    positive: '👍 Positive',
-                    negative: '👎 Negative',
-                    neutral: '😐 Neutral',
-                    pending: '⏳ Pending',
-                  };
-                  
-                  // Status badge styling
-                  const statusStyles: Record<string, string> = {
-                    active: 'bg-blue-100 text-blue-800',
-                    resolved: 'bg-green-100 text-green-800',
-                    escalated: 'bg-orange-100 text-orange-800',
-                  };
-                  
                   const statusLabels: Record<string, string> = {
-                    active: 'Active',
-                    resolved: 'Resolved',
-                    escalated: 'Escalated',
+                    positive: 'Positive',
+                    negative: 'Negative',
+                    neutral: 'Neutral',
+                    pending: 'Pending',
                   };
                   
                   return (
@@ -340,13 +324,8 @@ export default function AdminDashboard() {
                         {conv.category}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${sentimentStyles[sentiment]}`}>
-                          {sentimentLabels[sentiment]}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyles[conv.status]}`}>
-                          {statusLabels[conv.status]}
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyles[status]}`}>
+                          {statusLabels[status]}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
