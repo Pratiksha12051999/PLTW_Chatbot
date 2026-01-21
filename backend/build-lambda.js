@@ -13,7 +13,8 @@ async function bundle() {
     // REST API handlers
     { entry: 'src/handlers/rest/admin.ts', output: 'lambda-bundle/admin.js' },
     { entry: 'src/handlers/rest/feedback.ts', output: 'lambda-bundle/feedback.js' },
-    { entry: 'src/handlers/rest/upload.ts', output: 'lambda-bundle/upload.js' }
+    { entry: 'src/handlers/rest/upload.ts', output: 'lambda-bundle/upload.js' },
+    { entry: 'src/handlers/rest/sentiment.ts', output: 'lambda-bundle/sentiment.js' }
   ];
 
   for (const handler of handlers) {

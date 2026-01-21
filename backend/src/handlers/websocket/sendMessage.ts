@@ -55,6 +55,11 @@ export const handler = async (
         return { statusCode: 404, body: 'Conversation not found' };
       }
       conversation = existing;
+      
+      // Update last activity time for existing conversations
+      await dynamoDBService.updateConversation(existingConversationId, {
+        lastActivityTime: Date.now(),
+      });
     } else {
       conversation = {
         conversationId,

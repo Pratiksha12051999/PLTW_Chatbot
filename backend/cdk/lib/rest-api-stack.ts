@@ -4,6 +4,9 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
@@ -60,6 +63,19 @@ export class RestApiStack extends cdk.Stack {
       },
     });
 
+    // 4. Sentiment Handler - handles sentiment analysis for inactive conversations
+    const sentimentHandler = new lambda.Function(this, 'SentimentHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'sentiment.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda-bundle')),
+      timeout: cdk.Duration.seconds(60), // Longer timeout for batch processing
+      memorySize: 512,
+      environment: {
+        CONVERSATIONS_TABLE: conversationsTable.tableName,
+        NOVA_PRO_MODEL_ID: 'amazon.nova-pro-v1:0',
+      },
+    });
+
     // ============================================
     // PERMISSIONS
     // ============================================
@@ -74,6 +90,26 @@ export class RestApiStack extends cdk.Stack {
     uploadsBucket.grantPut(uploadHandler);
     uploadsBucket.grantRead(uploadHandler);
     fileAttachmentsTable.grantReadWriteData(uploadHandler);
+
+    // Sentiment handler - read/write access to conversations table + Bedrock
+    conversationsTable.grantReadWriteData(sentimentHandler);
+    sentimentHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['bedrock:InvokeModel'],
+      resources: ['arn:aws:bedrock:*::foundation-model/amazon.nova-pro-v1:0'],
+    }));
+
+    // ============================================
+    // EVENTBRIDGE RULE - Trigger sentiment analysis every 5 minutes
+    // ============================================
+
+    const sentimentRule = new events.Rule(this, 'SentimentAnalysisRule', {
+      ruleName: 'pltw-sentiment-analysis-schedule',
+      description: 'Triggers sentiment analysis for inactive conversations every 5 minutes',
+      schedule: events.Schedule.rate(cdk.Duration.minutes(5)),
+    });
+
+    sentimentRule.addTarget(new targets.LambdaFunction(sentimentHandler));
 
     // ============================================
     // REST API

@@ -14,6 +14,9 @@ const corsHeaders = {
 /**
  * Unified Feedback Handler
  * Handles: POST /feedback
+ * 
+ * User feedback (thumbs up/down) is stored directly as satisfaction.
+ * This explicit feedback takes precedence over LLM sentiment analysis.
  */
 export const handler = async (
   event: APIGatewayProxyEvent
@@ -38,20 +41,38 @@ export const submitFeedback = async (
 ): Promise<APIGatewayProxyResult> => {
   try {
     const body = JSON.parse(event.body || '{}');
-    const { conversationId, satisfaction, comment } = body; // Added comment
+    const { conversationId, satisfaction, comment } = body;
 
     if (!conversationId || !satisfaction) {
       return {
         statusCode: 400,
-        headers: { 'Content-Type': 'application/json' },
+        headers: corsHeaders,
         body: JSON.stringify({ error: 'Missing required fields' }),
       };
     }
 
-    const updates: any = {
+    // Validate satisfaction value
+    if (!['positive', 'negative'].includes(satisfaction)) {
+      return {
+        statusCode: 400,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: 'Invalid satisfaction value. Must be "positive" or "negative"' }),
+      };
+    }
+
+    console.log('[Feedback] Submitting user feedback', {
+      conversationId,
       satisfaction,
-      endTime: Date.now(),
-      status: 'resolved',
+      hasComment: !!comment,
+    });
+
+    // Store user's explicit feedback
+    // satisfaction = thumbs up (positive) or thumbs down (negative)
+    // sentiment is also set to match the explicit feedback
+    const updates: Record<string, any> = {
+      satisfaction,
+      sentiment: satisfaction, // Explicit feedback sets sentiment directly
+      lastActivityTime: Date.now(),
     };
 
     // Add comment if provided
@@ -59,27 +80,23 @@ export const submitFeedback = async (
       updates.comment = comment;
     }
 
-    // If user gives negative feedback, mark as escalated with 'user_not_satisfied' reason
-    if (satisfaction === 'negative') {
-      updates.status = 'escalated';
-      updates.escalationReason = 'user_not_satisfied';
-    }
-
     await dynamoDBService.updateConversation(conversationId, updates);
+
+    console.log('[Feedback] Feedback saved successfully', {
+      conversationId,
+      satisfaction,
+    });
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
+      headers: corsHeaders,
       body: JSON.stringify({ message: 'Feedback submitted successfully' }),
     };
   } catch (error) {
-    console.error('Error submitting feedback:', error);
+    console.error('[Feedback] Error submitting feedback:', error);
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: corsHeaders,
       body: JSON.stringify({ error: 'Failed to submit feedback' }),
     };
   }

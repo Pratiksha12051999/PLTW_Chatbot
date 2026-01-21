@@ -68,11 +68,14 @@ export interface Conversation {
   userId: string;
   startTime: number;
   endTime?: number;
+  lastActivityTime?: number;
   status: 'active' | 'resolved' | 'escalated';
   category?: ConversationCategory;
   messages: Message[];
   satisfaction?: 'positive' | 'negative';
+  sentiment?: 'positive' | 'negative' | 'neutral';
   escalationReason?: 'no_answer' | 'user_not_satisfied' | 'requested_agent';
+  comment?: string;
 }
 
 export interface Connection {

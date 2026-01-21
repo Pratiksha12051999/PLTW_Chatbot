@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { MessageSquare, AlertTriangle, ThumbsUp, TrendingUp, TrendingDown } from 'lucide-react';
+import { MessageSquare, AlertTriangle, ThumbsUp } from 'lucide-react';
 import { adminAPI, MetricsResponse, Conversation } from '@/lib/api';
-import { formatDistanceToNow } from 'date-fns';
 import ConversationVolumeChart from '@/components/charts/ConversationVolumeChart';
 import EscalationReasonsChart from '@/components/charts/EscalationReasonsChart';
 import TopCategoriesChart from '@/components/charts/TopCategoriesChart';
@@ -13,7 +12,6 @@ import ConversationDetailModal from '@/components/admin/ConversationDetailModal'
 
 export default function AdminDashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState<number>(7);
-  const [currentTab, setCurrentTab] = useState('Admin');
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -130,7 +128,7 @@ export default function AdminDashboard() {
                   Chatbot
                 </button>
                 <button
-                  onClick={() => setCurrentTab('Admin')}
+                  onClick={() => {}}
                   className="px-4 py-2 rounded-lg font-medium bg-gray-100 text-gray-900 transition-colors"
                 >
                   Admin
@@ -265,6 +263,10 @@ export default function AdminDashboard() {
                 <span className="text-sm text-gray-600">Positive</span>
               </div>
               <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-gray-400"></div>
+                <span className="text-sm text-gray-600">Neutral</span>
+              </div>
+              <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-red-500"></div>
                 <span className="text-sm text-gray-600">Negative</span>
               </div>
@@ -285,6 +287,9 @@ export default function AdminDashboard() {
                     Topic Category
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Sentiment
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -293,29 +298,63 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {conversations.slice(0, 10).map((conv, idx) => (
-                  <tr 
-                    key={idx} 
-                    className="hover:bg-gray-100 cursor-pointer transition-colors"
-                    onClick={() => handleConversationClick(conv)}
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {conv.category}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        conv.status === 'active' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-orange-100 text-orange-800'
-                      }`}>
-                        {conv.status === 'active' ? 'Resolved by bot' : 'Escalated'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(conv.startTime)}
-                    </td>
-                  </tr>
-                ))}
+                {conversations.slice(0, 10).map((conv, idx) => {
+                  // Determine sentiment: explicit feedback takes precedence, then LLM analysis
+                  const sentiment = conv.satisfaction || conv.sentiment || 'pending';
+                  
+                  // Sentiment badge styling
+                  const sentimentStyles: Record<string, string> = {
+                    positive: 'bg-green-100 text-green-800',
+                    negative: 'bg-red-100 text-red-800',
+                    neutral: 'bg-gray-100 text-gray-800',
+                    pending: 'bg-yellow-100 text-yellow-800',
+                  };
+                  
+                  const sentimentLabels: Record<string, string> = {
+                    positive: '👍 Positive',
+                    negative: '👎 Negative',
+                    neutral: '😐 Neutral',
+                    pending: '⏳ Pending',
+                  };
+                  
+                  // Status badge styling
+                  const statusStyles: Record<string, string> = {
+                    active: 'bg-blue-100 text-blue-800',
+                    resolved: 'bg-green-100 text-green-800',
+                    escalated: 'bg-orange-100 text-orange-800',
+                  };
+                  
+                  const statusLabels: Record<string, string> = {
+                    active: 'Active',
+                    resolved: 'Resolved',
+                    escalated: 'Escalated',
+                  };
+                  
+                  return (
+                    <tr 
+                      key={idx} 
+                      className="hover:bg-gray-100 cursor-pointer transition-colors"
+                      onClick={() => handleConversationClick(conv)}
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {conv.category}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${sentimentStyles[sentiment]}`}>
+                          {sentimentLabels[sentiment]}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyles[conv.status]}`}>
+                          {statusLabels[conv.status]}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDate(conv.startTime)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (

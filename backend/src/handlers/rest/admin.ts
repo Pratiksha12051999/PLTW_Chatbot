@@ -60,14 +60,31 @@ export const getMetrics = async (
       endTime
     );
 
-    const totalWithSatisfaction = conversations.filter((c) => c.satisfaction).length;
-    const positiveCount = conversations.filter((c) => c.satisfaction === 'positive').length;
+    // Calculate satisfaction based on explicit feedback OR sentiment analysis
+    const conversationsWithSentiment = conversations.filter(
+      (c) => c.satisfaction || c.sentiment
+    );
+    const positiveCount = conversations.filter(
+      (c) => c.satisfaction === 'positive' || (!c.satisfaction && c.sentiment === 'positive')
+    ).length;
+    const negativeCount = conversations.filter(
+      (c) => c.satisfaction === 'negative' || (!c.satisfaction && c.sentiment === 'negative')
+    ).length;
+    const neutralCount = conversations.filter(
+      (c) => !c.satisfaction && c.sentiment === 'neutral'
+    ).length;
+    
     const escalatedCount = conversations.filter((c) => c.status === 'escalated').length;
+
+    // Overall satisfaction: positive / (positive + negative) * 100
+    // Neutral doesn't count against satisfaction
+    const totalRated = positiveCount + negativeCount;
+    const overallSatisfaction = totalRated > 0 ? (positiveCount / totalRated) * 100 : 0;
 
     const metrics: AdminMetrics = {
       totalConversations: conversations.length,
       escalationRate: conversations.length > 0 ? (escalatedCount / conversations.length) * 100 : 0,
-      overallSatisfaction: totalWithSatisfaction > 0 ? (positiveCount / totalWithSatisfaction) * 100 : 0,
+      overallSatisfaction,
       conversationVolume: calculateDailyVolume(conversations, days),
       topCategories: calculateTopCategories(conversations),
       escalationReasons: calculateEscalationReasons(conversations),

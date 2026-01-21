@@ -53,10 +53,13 @@ export interface Conversation {
   category: string;
   startTime: number;
   endTime?: number;
+  lastActivityTime?: number;
   status: 'active' | 'resolved' | 'escalated';
   userId: string;
   satisfaction?: 'positive' | 'negative';
+  sentiment?: 'positive' | 'negative' | 'neutral';
   escalationReason?: 'no_answer' | 'user_not_satisfied' | 'requested_agent';
+  comment?: string;
   messages: Array<{
     messageId: string;
     role: 'user' | 'assistant';
