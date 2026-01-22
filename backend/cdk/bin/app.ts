@@ -6,6 +6,7 @@ import { WebSocketStack } from '../lib/websocket-stack';
 import { RestApiStack } from '../lib/rest-api-stack';
 import { CognitoStack } from '../lib/cognito-stack';
 import { AmplifyStack } from '../lib/amplify-stack';
+import { SQSStack } from '../lib/sqs-stack';
 
 const app = new cdk.App();
 
@@ -31,10 +32,20 @@ const cognitoStack = new CognitoStack(app, 'CognitoStack', {
   },
 });
 
+// SQS Stack
+const sqsStack = new SQSStack(app, 'SQSStack', {
+  conversationsTable: dynamoDBStack.conversationsTable,
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION,
+  },
+});
+
 // WebSocket Stack
 const webSocketStack = new WebSocketStack(app, 'WebSocketStack', {
   conversationsTable: dynamoDBStack.conversationsTable,
   connectionsTable: dynamoDBStack.connectionsTable,
+  escalationQueue: sqsStack.escalationQueue,
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
@@ -54,7 +65,9 @@ const restApiStack = new RestApiStack(app, 'RestApiStack', {
 webSocketStack.addDependency(dynamoDBStack);
 restApiStack.addDependency(dynamoDBStack);
 restApiStack.addDependency(cognitoStack);
-
+webSocketStack.addDependency(sqsStack);
+restApiStack.addDependency(sqsStack);
+sqsStack.addDependency(dynamoDBStack);
 
 // Amplify Stack (only if GitHub credentials provided)
 if (githubToken && githubOwner && githubRepo) {

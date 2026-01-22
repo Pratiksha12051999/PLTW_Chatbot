@@ -11,7 +11,6 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import CitationDisplay from './CitationDisplay';
 
-
 const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'wss://q76me9fvqa.execute-api.us-east-1.amazonaws.com/prod';
 
 // Clean text by removing content in square brackets
@@ -70,38 +69,28 @@ const formatMessageContent = (content: string) => {
 
 // Format inline text (handle **bold**, URLs, and markdown links within text)
 const formatInlineText = (text: string): React.ReactNode => {
-  // First, handle markdown links [text](url)
-  // Then handle plain URLs
-  // Then handle bold text
-  
-  // Regex patterns
   const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
   const urlRegex = /(https?:\/\/[^\s<>"\]]+)/g;
   const boldRegex = /(\*\*.*?\*\*)/g;
-  
-  // Replace markdown links with placeholders first
+
   const links: { placeholder: string; text: string; url: string }[] = [];
-  let processedText = text.replace(markdownLinkRegex, (match, linkText, url) => {
+  let processedText = text.replace(markdownLinkRegex, (_, linkText, url) => {
     const placeholder = `__MDLINK_${links.length}__`;
     links.push({ placeholder, text: linkText, url });
     return placeholder;
   });
-  
-  // Replace plain URLs with placeholders
+
   const plainUrls: { placeholder: string; url: string }[] = [];
   processedText = processedText.replace(urlRegex, (match) => {
-    // Skip if this URL is already part of a markdown link placeholder
     if (match.includes('__MDLINK_')) return match;
     const placeholder = `__URL_${plainUrls.length}__`;
     plainUrls.push({ placeholder, url: match });
     return placeholder;
   });
-  
-  // Split by bold markers
+
   const parts = processedText.split(boldRegex);
 
   return parts.map((part, idx) => {
-    // Handle bold text
     if (part.startsWith('**') && part.endsWith('**')) {
       const innerText = part.slice(2, -2);
       return (
@@ -114,32 +103,28 @@ const formatInlineText = (text: string): React.ReactNode => {
   });
 };
 
-// Helper function to render text with link placeholders replaced
 const renderWithLinks = (
-  text: string, 
+  text: string,
   mdLinks: { placeholder: string; text: string; url: string }[],
   plainUrls: { placeholder: string; url: string }[],
   keyPrefix: string
 ): React.ReactNode => {
-  // Check if text contains any placeholders
-  const hasPlaceholders = mdLinks.some(l => text.includes(l.placeholder)) || 
-                          plainUrls.some(u => text.includes(u.placeholder));
-  
+  const hasPlaceholders = mdLinks.some(l => text.includes(l.placeholder)) ||
+    plainUrls.some(u => text.includes(u.placeholder));
+
   if (!hasPlaceholders) {
     return text;
   }
-  
-  // Build regex to split by all placeholders
+
   const allPlaceholders = [
     ...mdLinks.map(l => l.placeholder),
     ...plainUrls.map(u => u.placeholder)
   ];
   const placeholderRegex = new RegExp(`(${allPlaceholders.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
-  
+
   const segments = text.split(placeholderRegex);
-  
+
   return segments.map((segment, segIdx) => {
-    // Check if this segment is a markdown link placeholder
     const mdLink = mdLinks.find(l => l.placeholder === segment);
     if (mdLink) {
       return (
@@ -157,34 +142,26 @@ const renderWithLinks = (
         </a>
       );
     }
-    
-    // Check if this segment is a plain URL placeholder
+
     const plainUrl = plainUrls.find(u => u.placeholder === segment);
     if (plainUrl) {
-      // Extract a friendly display text from the URL
       let displayText = plainUrl.url;
-      let domain = '';
       try {
         const urlObj = new URL(plainUrl.url);
-        domain = urlObj.hostname.replace('www.', '');
+        const domain = urlObj.hostname.replace('www.', '');
         const path = urlObj.pathname !== '/' ? urlObj.pathname : '';
         displayText = domain + path;
-        // Truncate path if too long, keep domain visible
         if (displayText.length > 40) {
           displayText = domain + (path.length > 15 ? path.substring(0, 12) + '...' : path);
         }
       } catch {
-        // Keep original URL if parsing fails, but truncate
         if (displayText.length > 40) {
           displayText = displayText.substring(0, 37) + '...';
         }
       }
-      
+
       return (
-        <span
-          key={`${keyPrefix}-url-${segIdx}`}
-          className="inline-block my-1"
-        >
+        <span key={`${keyPrefix}-url-${segIdx}`} className="inline-block my-1">
           <a
             href={plainUrl.url}
             target="_blank"
@@ -203,7 +180,7 @@ const renderWithLinks = (
         </span>
       );
     }
-    
+
     return segment;
   });
 };
@@ -219,10 +196,9 @@ export default function ChatWindow() {
   const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'positive' | 'negative'>>({});
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const router = useRouter();
-  
+
   const { language, setLanguage, translations } = useLanguage();
-  
-  // Get topics from translations based on current language
+
   const currentTranslations = translations[language];
   const topicKeys = Object.keys(currentTranslations.topics) as Array<keyof typeof currentTranslations.topics>;
   const popularTopics = topicKeys.map(key => currentTranslations.topics[key]);
@@ -234,7 +210,10 @@ export default function ChatWindow() {
     shouldEscalate,
     contactInfo,
     conversationId,
+    queueInfo,
+    isEscalated,
     sendMessage,
+    escalateToAgent,
     resetChat,
   } = useWebSocket(WEBSOCKET_URL);
 
@@ -258,14 +237,13 @@ export default function ChatWindow() {
 
   const handleFeedback = async (messageId: string, satisfaction: 'positive' | 'negative') => {
     if (!conversationId || feedbackGiven[messageId]) return;
-    
+
     try {
       await adminAPI.submitFeedback({
         conversationId,
         satisfaction,
       });
       setFeedbackGiven(prev => ({ ...prev, [messageId]: satisfaction }));
-      console.log(`Feedback submitted: ${satisfaction} for message ${messageId}`);
     } catch (error) {
       console.error('Failed to submit feedback:', error);
     }
@@ -283,36 +261,22 @@ export default function ChatWindow() {
     setLoginError('');
     setIsLoggingIn(true);
 
-    console.log('Attempting login...');
-
     try {
       const result = await login(email, password);
-      console.log('Login result:', result);
 
       if (result.isSignedIn) {
-        console.log('Login successful! Redirecting...');
         setShowAdminLogin(false);
-
-        // Use Next.js router for navigation
         router.push('/admin');
       } else if (result.nextStep?.signInStep === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED') {
         setLoginError('You need to change your password. Please contact support.');
       } else {
         setLoginError('Unexpected login state. Please try again.');
       }
-    } catch (error: any) {
-      console.error('Login error:', error);
-      setLoginError(error.message || 'Login failed. Please try again.');
+    } catch (error: unknown) {
+      const err = error as Error;
+      setLoginError(err.message || 'Login failed. Please try again.');
     } finally {
       setIsLoggingIn(false);
-    }
-  };
-
-  const handleAdminClick = () => {
-    if (isAuthenticated) {
-      router.push('/admin');
-    } else {
-      setShowAdminLogin(true);
     }
   };
 
@@ -342,29 +306,25 @@ export default function ChatWindow() {
         <div className="flex items-center bg-gray-100 rounded-lg p-1">
           <button
             onClick={() => setLanguage('en')}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-              language === 'en'
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${language === 'en'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
-            }`}
+              }`}
             title="English"
           >
             EN
           </button>
           <button
             onClick={() => setLanguage('es')}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-              language === 'es'
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${language === 'es'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
-            }`}
+              }`}
             title="Español"
           >
             ES
           </button>
         </div>
-
-
       </header>
 
       {/* Admin Login Modal */}
@@ -454,12 +414,13 @@ export default function ChatWindow() {
                 }}
                 className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
               >
-                Permanently Delete
+                Clear Chat
               </button>
             </div>
           </div>
         </div>
       )}
+
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto px-6 py-8">
         {showWelcome ? (
@@ -514,17 +475,63 @@ export default function ChatWindow() {
           </div>
         ) : (
           <div className="max-w-4xl mx-auto space-y-6">
+            {/* Queue Status Display */}
+            {isEscalated && queueInfo && (
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 mb-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
+                    <span className="text-white text-2xl font-bold">#{queueInfo.position}</span>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-blue-900 text-xl">You&apos;re in Queue!</h4>
+                    <p className="text-sm text-blue-700">Ticket: {queueInfo.ticketId}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3 text-sm text-blue-800">
+                  <div className="flex items-center justify-between py-2 border-b border-blue-200">
+                    <span className="font-medium">Queue Position:</span>
+                    <span className="text-lg font-bold">#{queueInfo.position}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-b border-blue-200">
+                    <span className="font-medium">Estimated Wait:</span>
+                    <span className="text-lg font-bold">~{queueInfo.estimatedWait} minutes</span>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-blue-200 bg-white rounded-lg p-4">
+                    <p className="font-semibold mb-3 text-blue-900">Need immediate assistance?</p>
+                    <div className="space-y-2">
+                      <a
+                        href="tel:877-335-7589"
+                        className="flex items-center gap-2 text-blue-700 hover:text-blue-900 transition-colors"
+                      >
+                        <span>📞</span>
+                        <span>877.335.7589</span>
+                      </a>
+                      <a
+                        href="mailto:solutioncenter@pltw.org"
+                        className="flex items-center gap-2 text-blue-700 hover:text-blue-900 transition-colors"
+                      >
+                        <span>✉️</span>
+                        <span>solutioncenter@pltw.org</span>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Messages */}
             {messages.map((msg, idx) => (
               <div
                 key={msg.messageId || idx}
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[80%] rounded-2xl px-5 py-4 ${
-                    msg.role === 'user'
+                  className={`max-w-[80%] rounded-2xl px-5 py-4 ${msg.role === 'user'
                       ? 'bg-blue-900 text-white'
                       : 'bg-white text-gray-900 shadow-sm border border-gray-200'
-                  }`}
+                    }`}
                 >
                   <div className="text-base leading-relaxed">
                     {msg.role === 'user' ? (
@@ -535,27 +542,26 @@ export default function ChatWindow() {
                       </div>
                     )}
                   </div>
-                  {/* Render citations for assistant messages */}
+
                   {msg.role === 'assistant' && msg.metadata?.sources && (
                     <CitationDisplay sources={msg.metadata.sources} />
                   )}
-                  <div className={`flex items-center justify-between mt-2 ${msg.role === 'user' ? '' : ''}`}>
+                  <div className={`flex items-center justify-between mt-2`}>
                     <span className={`text-xs ${msg.role === 'user' ? 'opacity-80' : 'opacity-60'}`}>
                       {msg.timestamp ? formatDistanceToNow(new Date(msg.timestamp), { addSuffix: true }) : 'just now'}
                     </span>
-                    {/* Feedback buttons for assistant messages */}
+
                     {msg.role === 'assistant' && (
                       <div className="flex gap-1 ml-3">
                         <button
                           onClick={() => handleFeedback(msg.messageId, 'positive')}
                           disabled={!!feedbackGiven[msg.messageId]}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            feedbackGiven[msg.messageId] === 'positive'
+                          className={`p-1.5 rounded-lg transition-colors ${feedbackGiven[msg.messageId] === 'positive'
                               ? 'bg-green-100 text-green-600'
                               : feedbackGiven[msg.messageId]
-                              ? 'text-gray-300 cursor-not-allowed'
-                              : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
-                          }`}
+                                ? 'text-gray-300 cursor-not-allowed'
+                                : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
+                            }`}
                           title="Helpful"
                         >
                           <ThumbsUp className="w-4 h-4" />
@@ -563,13 +569,12 @@ export default function ChatWindow() {
                         <button
                           onClick={() => handleFeedback(msg.messageId, 'negative')}
                           disabled={!!feedbackGiven[msg.messageId]}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            feedbackGiven[msg.messageId] === 'negative'
+                          className={`p-1.5 rounded-lg transition-colors ${feedbackGiven[msg.messageId] === 'negative'
                               ? 'bg-red-100 text-red-600'
                               : feedbackGiven[msg.messageId]
-                              ? 'text-gray-300 cursor-not-allowed'
-                              : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                          }`}
+                                ? 'text-gray-300 cursor-not-allowed'
+                                : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            }`}
                           title="Not helpful"
                         >
                           <ThumbsDown className="w-4 h-4" />
@@ -581,6 +586,7 @@ export default function ChatWindow() {
               </div>
             ))}
 
+            {/* Typing Indicator */}
             {isTyping && (
               <div className="flex justify-start">
                 <div className="bg-white rounded-2xl px-5 py-4 shadow-sm border border-gray-200">
@@ -593,19 +599,28 @@ export default function ChatWindow() {
               </div>
             )}
 
-            {shouldEscalate && contactInfo && (
+            {/* Escalation Suggestion Banner */}
+            {shouldEscalate && !isEscalated && contactInfo && (
               <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-5">
                 <h4 className="font-semibold text-yellow-900 mb-2 text-lg">Need Additional Help?</h4>
                 <p className="text-sm text-yellow-800 mb-4">
-                  For more complex questions, please contact our Solution Center:
+                  For more complex questions, you can talk to our support team or contact us directly:
                 </p>
-                <div className="space-y-2 text-sm">
-                  <p className="text-yellow-900 font-medium">
-                    📞 Phone: <a href={`tel:${contactInfo.phone}`} className="underline hover:text-yellow-700">{contactInfo.phone}</a>
-                  </p>
-                  <p className="text-yellow-900 font-medium">
-                    ✉️ Email: <a href={`mailto:${contactInfo.email}`} className="underline hover:text-yellow-700">{contactInfo.email}</a>
-                  </p>
+                <div className="space-y-3">
+                  <button
+                    onClick={escalateToAgent}
+                    className="w-full px-4 py-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    🆘 Connect with Human Agent
+                  </button>
+                  <div className="text-sm space-y-1">
+                    <p className="text-yellow-900 font-medium">
+                      📞 Phone: <a href={`tel:${contactInfo.phone}`} className="underline hover:text-yellow-700">{contactInfo.phone}</a>
+                    </p>
+                    <p className="text-yellow-900 font-medium">
+                      ✉️ Email: <a href={`mailto:${contactInfo.email}`} className="underline hover:text-yellow-700">{contactInfo.email}</a>
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -621,7 +636,7 @@ export default function ChatWindow() {
               type="text"
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
               placeholder="Ask a question..."
               className="flex-1 px-4 py-3.5 text-base text-gray-900 placeholder-gray-400 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent"
               disabled={!isConnected}
@@ -636,7 +651,6 @@ export default function ChatWindow() {
               <Send className="w-5 h-5" />
             </button>
 
-            {/* Clear Chat button - only show when conversation is active */}
             {!showWelcome && (
               <button
                 onClick={() => setShowClearConfirm(true)}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
 export interface Message {
   messageId: string;
@@ -8,18 +8,31 @@ export interface Message {
   timestamp: number;
   metadata?: {
     confidence?: number;
-    sources?: string[];
+    sources?: any;
+    escalated?: boolean;
+    ticketId?: string;
+    queuePosition?: number;
   };
+  attachments?: FileAttachment[];
 }
 
-interface WebSocketMessage {
-  type: 'message_received' | 'assistant_response' | 'error' | 'escalated';
-  message?: Message | string;
-  shouldEscalate?: boolean;
-  contactInfo?: {
-    phone: string;
-    email: string;
-  };
+export interface FileAttachment {
+  fileId: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  uploadedAt: number;
+}
+
+export interface QueueInfo {
+  ticketId: string;
+  position: number;
+  estimatedWait: number;
+}
+
+interface ContactInfo {
+  phone: string;
+  email: string;
 }
 
 export const useWebSocket = (url: string) => {
@@ -27,122 +40,124 @@ export const useWebSocket = (url: string) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [shouldEscalate, setShouldEscalate] = useState(false);
-  const [contactInfo, setContactInfo] = useState<{ phone: string; email: string } | null>(null);
+  const [contactInfo, setContactInfo] = useState<ContactInfo | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [queueInfo, setQueueInfo] = useState<QueueInfo | null>(null);
+  const [isEscalated, setIsEscalated] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+
+  const connect = useCallback(() => {
+  console.log('🔌 Connecting to WebSocket:', url);
+
+  const ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    console.log('✅ WebSocket connected');
+    setIsConnected(true);
+    reconnectAttemptsRef.current = 0;
+  };
+
+  ws.onclose = () => {
+    console.log('❌ WebSocket disconnected');
+    setIsConnected(false);
+
+    // Auto-reconnect with exponential backoff
+    if (reconnectAttemptsRef.current < 5) {
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
+      console.log(`🔄 Reconnecting in ${delay}ms...`);
+      reconnectTimeoutRef.current = setTimeout(() => {
+        reconnectAttemptsRef.current++;
+        connect();
+      }, delay);
+    } else {
+      console.error('❌ Max reconnection attempts reached');
+    }
+  };
+
+  ws.onerror = (error) => {
+    console.error('WebSocket error:', error);
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      console.log('📨 WebSocket message received:', data.type);
+
+      switch (data.type) {
+        case 'message_received':
+          if (data.message) {
+            setMessages((prev) => {
+              const exists = prev.some(m => m.messageId === data.message.messageId);
+              if (exists) return prev;
+              return [...prev, data.message];
+            });
+            setConversationId((prevId) => prevId || data.message.conversationId);
+          }
+          break;
+
+        case 'assistant_response':
+          setIsTyping(false);
+          if (data.message) {
+            setMessages((prev) => {
+              const exists = prev.some(m => m.messageId === data.message.messageId);
+              if (exists) return prev;
+              return [...prev, data.message];
+            });
+          }
+          if (data.shouldEscalate) {
+            setShouldEscalate(true);
+            if (data.contactInfo) {
+              setContactInfo(data.contactInfo);
+            }
+          }
+          break;
+
+        case 'escalated':
+          console.log('🆘 Escalation confirmed');
+          setIsTyping(false);
+          setIsEscalated(true);
+          setShouldEscalate(true);
+
+          if (data.message) {
+            setMessages((prev) => {
+              const exists = prev.some(m => m.messageId === data.message.messageId);
+              if (exists) return prev;
+              return [...prev, data.message];
+            });
+          }
+
+          if (data.contactInfo) {
+            setContactInfo(data.contactInfo);
+          }
+
+          if (data.queueInfo) {
+            setQueueInfo(data.queueInfo);
+            console.log('Queue info received:', data.queueInfo);
+          }
+          break;
+
+        case 'error':
+          setIsTyping(false);
+          if (data.message) {
+            setMessages((prev) => [...prev, data.message]);
+          }
+          break;
+
+        default:
+          console.warn('Unknown message type:', data.type);
+      }
+    } catch (error) {
+      console.error('Error parsing WebSocket message:', error);
+    }
+  };
+
+  wsRef.current = ws;
+}, [url]);
 
   useEffect(() => {
-    if (!url) {
-      console.error('WebSocket URL is not configured');
-      return;
-    }
-
-    const connect = () => {
-      try {
-        console.log('🔌 Connecting to WebSocket:', url);
-        const ws = new WebSocket(url);
-
-        ws.onopen = () => {
-          console.log('✅ WebSocket connected');
-          setIsConnected(true);
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            console.log('📨 Raw WebSocket data:', event.data);
-            const data: WebSocketMessage = JSON.parse(event.data);
-            console.log('📨 Parsed WebSocket message:', JSON.stringify(data));
-            console.log('📨 Message type:', data.type);
-
-            switch (data.type) {
-              case 'message_received':
-                console.log('Processing message_received');
-                if (typeof data.message === 'object' && data.message) {
-                  const msg = data.message as Message;
-                  // Ensure timestamp is valid
-                  if (!msg.timestamp) {
-                    msg.timestamp = Date.now();
-                  }
-                  console.log('Updating user message with server response:', msg);
-                  // Replace the optimistic message with the real one from server
-                  setMessages(prev => {
-                    // Find and replace the temp message, or add if not found
-                    const tempIndex = prev.findIndex(m => m.messageId.startsWith('temp-') && m.role === 'user');
-                    if (tempIndex !== -1) {
-                      const updated = [...prev];
-                      updated[tempIndex] = msg;
-                      return updated;
-                    }
-                    return [...prev, msg];
-                  });
-                  setConversationId(msg.conversationId);
-                }
-                // isTyping is already true from sendMessage, keep it true
-                setIsTyping(true);
-                break;
-
-              case 'assistant_response':
-                console.log('Processing assistant_response');
-                setIsTyping(false);
-                if (typeof data.message === 'object' && data.message) {
-                  const msg = data.message as Message;
-                  // Ensure timestamp is valid
-                  if (!msg.timestamp) {
-                    msg.timestamp = Date.now();
-                  }
-                  console.log('Adding assistant message:', msg);
-                  setMessages(prev => [...prev, msg]);
-                }
-                if (data.shouldEscalate) {
-                  setShouldEscalate(true);
-                }
-                break;
-
-              case 'escalated':
-                setIsTyping(false);
-                setShouldEscalate(true);
-                if (data.contactInfo) {
-                  setContactInfo(data.contactInfo);
-                }
-                break;
-
-              case 'error':
-                setIsTyping(false);
-                console.error('WebSocket error message:', data.message);
-                break;
-                
-              default:
-                console.warn('Unknown message type:', data.type);
-            }
-          } catch (parseError) {
-            console.error('Failed to parse WebSocket message:', parseError, event.data);
-          }
-        };
-
-        ws.onerror = (error) => {
-          console.error('❌ WebSocket error:', error);
-          setIsConnected(false);
-        };
-
-        ws.onclose = () => {
-          console.log('🔌 WebSocket disconnected, reconnecting in 3s...');
-          setIsConnected(false);
-
-          // Reconnect after 3 seconds
-          reconnectTimeoutRef.current = window.setTimeout(() => {
-            connect();
-          }, 3000);
-        };
-
-        wsRef.current = ws;
-      } catch (error) {
-        console.error('Failed to connect:', error);
-        setIsConnected(false);
-      }
-    };
-
     connect();
 
     return () => {
@@ -153,51 +168,64 @@ export const useWebSocket = (url: string) => {
         wsRef.current.close();
       }
     };
-  }, [url]);
+  }, [connect]);
 
-  const sendMessage = useCallback((content: string, category: string = 'General', _fileIds?: string[], language: 'en' | 'es' = 'en') => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      // Immediately show typing indicator to prevent blank screen
+  const sendMessage = useCallback(
+    (
+      content: string,
+      category: string = 'General',
+      fileIds?: string[],
+      language: string = 'en'
+    ) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        console.error('WebSocket is not connected');
+        return;
+      }
+
       setIsTyping(true);
-      
-      const payload: {
-        action: string;
-        message: string;
-        conversationId: string | null;
-        category: string;
-        language: 'en' | 'es';
-      } = {
+
+      const messageData = {
         action: 'sendMessage',
         message: content,
         conversationId,
         category,
-        language
+        fileIds,
+        language,
       };
-      
-      wsRef.current.send(JSON.stringify(payload));
-    } else {
+
+      console.log('📤 Sending message:', messageData);
+      wsRef.current.send(JSON.stringify(messageData));
+    },
+    [conversationId]
+  );
+
+  const escalateToAgent = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       console.error('WebSocket is not connected');
+      return;
     }
+
+    console.log('🆘 Requesting escalation...');
+    setIsTyping(true);
+
+    const escalationData = {
+      action: 'escalate',
+      message: 'I need to speak with a human agent',
+      conversationId,
+      category: 'Escalation',
+    };
+
+    wsRef.current.send(JSON.stringify(escalationData));
   }, [conversationId]);
 
-  const escalate = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && conversationId) {
-      wsRef.current.send(JSON.stringify({
-        action: 'escalate',
-        conversationId
-      }));
-    }
-  }, [conversationId]);
-
-  /**
-   * Reset the chat state to start a new conversation
-   */
   const resetChat = useCallback(() => {
     setMessages([]);
     setConversationId(null);
-    setIsTyping(false);
     setShouldEscalate(false);
     setContactInfo(null);
+    setIsTyping(false);
+    setQueueInfo(null);
+    setIsEscalated(false);
   }, []);
 
   return {
@@ -207,8 +235,10 @@ export const useWebSocket = (url: string) => {
     shouldEscalate,
     contactInfo,
     conversationId,
+    queueInfo,
+    isEscalated,
     sendMessage,
-    escalate,
-    resetChat
+    escalateToAgent,
+    resetChat,
   };
 };

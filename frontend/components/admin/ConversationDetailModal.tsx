@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useCallback } from 'react';
-import { X, Paperclip } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Conversation } from '@/lib/api';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -81,15 +81,6 @@ const formatMessageContent = (content: string) => {
   });
 };
 
-// Format file size for display
-const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-};
-
 // Calculate duration between two timestamps
 const formatDuration = (startTime: number, endTime?: number): string => {
   if (!endTime) return 'Ongoing';
@@ -98,34 +89,6 @@ const formatDuration = (startTime: number, endTime?: number): string => {
   const seconds = Math.floor((durationMs % 60000) / 1000);
   if (minutes === 0) return `${seconds}s`;
   return `${minutes}m ${seconds}s`;
-};
-
-// Get escalation badge color
-const getEscalationBadgeStyle = (reason: string): string => {
-  switch (reason) {
-    case 'user_not_satisfied':
-      return 'bg-red-100 text-red-800';
-    case 'no_answer':
-      return 'bg-orange-100 text-orange-800';
-    case 'requested_agent':
-      return 'bg-yellow-100 text-yellow-800';
-    default:
-      return 'bg-gray-100 text-gray-800';
-  }
-};
-
-// Get escalation reason display text
-const getEscalationReasonText = (reason: string): string => {
-  switch (reason) {
-    case 'user_not_satisfied':
-      return 'User Not Satisfied';
-    case 'no_answer':
-      return 'No Answer';
-    case 'requested_agent':
-      return 'Requested Agent';
-    default:
-      return reason;
-  }
 };
 
 // Get status badge style
@@ -292,27 +255,6 @@ export default function ConversationDetailModal({
                         </div>
                       )}
                     </div>
-
-                    {/* Attachments */}
-                    {message.attachments && message.attachments.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <div className="text-xs text-gray-500 mb-2">
-                          Attachments:
-                        </div>
-                        {message.attachments.map((attachment, idx) => (
-                          <div
-                            key={attachment.fileId || idx}
-                            className="flex items-center gap-2 text-xs"
-                          >
-                            <Paperclip className="w-3 h-3" />
-                            <span>{attachment.filename}</span>
-                            <span className="text-gray-400">
-                              ({formatFileSize(attachment.size)})
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
 
                     <div
                       className={`text-xs mt-2 ${
