@@ -1,7 +1,11 @@
-import { SQSClient, SendMessageCommand, GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
+import {
+  SQSClient,
+  SendMessageCommand,
+  GetQueueAttributesCommand,
+} from "@aws-sdk/client-sqs";
 
 const sqsClient = new SQSClient({ region: process.env.AWS_REGION });
-const QUEUE_URL = process.env.ESCALATION_QUEUE_URL || '';
+const QUEUE_URL = process.env.ESCALATION_QUEUE_URL || "";
 
 interface EscalationTicket {
   conversationId: string;
@@ -19,51 +23,75 @@ export class EscalationService {
   /**
    * Add user to escalation queue
    */
-  static async addToQueue(ticket: EscalationTicket): Promise<{ queuePosition: number; ticketId: string }> {
+  static async addToQueue(
+    ticket: EscalationTicket,
+  ): Promise<{ queuePosition: number; ticketId: string }> {
+    console.log("🔧 ===== ADD TO QUEUE START =====");
+    console.log("🔧 Ticket:", JSON.stringify(ticket, null, 2));
+    console.log("🔧 Queue URL:", QUEUE_URL);
+
     try {
       // Get current queue size
+      console.log("🔧 Getting current queue size...");
       const queuePosition = await this.getQueueSize();
+      console.log("🔧 Current queue size:", queuePosition);
 
       // Create unique ticket ID
       const ticketId = `TICKET-${Date.now()}-${ticket.userId.substring(0, 8)}`;
+      console.log("🔧 Generated ticket ID:", ticketId);
+
+      const messageBody = {
+        ticketId,
+        ...ticket,
+        queuePosition: queuePosition + 1,
+        addedAt: Date.now(),
+      };
+
+      console.log("🔧 SQS Message Body:", JSON.stringify(messageBody, null, 2));
 
       // Send message to SQS with FIFO
       const command = new SendMessageCommand({
         QueueUrl: QUEUE_URL,
-        MessageBody: JSON.stringify({
-          ticketId,
-          ...ticket,
-          queuePosition: queuePosition + 1,
-          addedAt: Date.now(),
-        }),
-        MessageGroupId: 'escalations',
+        MessageBody: JSON.stringify(messageBody),
+        MessageGroupId: "escalations",
         MessageDeduplicationId: `${ticket.conversationId}-${Date.now()}`,
         MessageAttributes: {
           conversationId: {
-            DataType: 'String',
+            DataType: "String",
             StringValue: ticket.conversationId,
           },
           category: {
-            DataType: 'String',
+            DataType: "String",
             StringValue: ticket.category,
           },
           priority: {
-            DataType: 'String',
-            StringValue: 'normal',
+            DataType: "String",
+            StringValue: "normal",
           },
         },
       });
 
-      await sqsClient.send(command);
+      console.log("🔧 Sending message to SQS...");
+      const result = await sqsClient.send(command);
+      console.log("✅ SQS Message sent successfully");
+      console.log("✅ Message ID:", result.MessageId);
 
-      console.log(`Added ticket ${ticketId} to queue at position ${queuePosition + 1}`);
+      console.log(
+        `✅ Added ticket ${ticketId} to queue at position ${queuePosition + 1}`,
+      );
+      console.log("🔧 ===== ADD TO QUEUE END =====");
 
       return {
         queuePosition: queuePosition + 1,
         ticketId,
       };
     } catch (error) {
-      console.error('Error adding to escalation queue:', error);
+      console.error("❌ ===== ADD TO QUEUE ERROR =====");
+      console.error("❌ Error:", error);
+      console.error("❌ Error name:", (error as Error).name);
+      console.error("❌ Error message:", (error as Error).message);
+      console.error("❌ Stack:", (error as Error).stack);
+      console.error("❌ ================================");
       throw error;
     }
   }
@@ -72,18 +100,20 @@ export class EscalationService {
    * Get current queue size
    */
   static async getQueueSize(): Promise<number> {
+    console.log("📊 Getting queue size from:", QUEUE_URL);
     try {
       const command = new GetQueueAttributesCommand({
         QueueUrl: QUEUE_URL,
-        AttributeNames: ['ApproximateNumberOfMessages'],
+        AttributeNames: ["ApproximateNumberOfMessages"],
       });
 
       const response = await sqsClient.send(command);
-      const count = response.Attributes?.ApproximateNumberOfMessages || '0';
+      const count = response.Attributes?.ApproximateNumberOfMessages || "0";
+      console.log("📊 Queue size:", count);
 
       return parseInt(count, 10);
     } catch (error) {
-      console.error('Error getting queue size:', error);
+      console.error("❌ Error getting queue size:", error);
       return 0;
     }
   }
@@ -92,31 +122,44 @@ export class EscalationService {
    * Check if message should trigger escalation
    */
   static shouldEscalate(userMessage: string, action?: string): boolean {
+    console.log("🔍 ===== CHECKING ESCALATION KEYWORDS =====");
+    console.log("🔍 User message:", userMessage);
+    console.log("🔍 Action:", action);
+
     // Check if explicit escalation action
-    if (action === 'escalate') {
+    if (action === "escalate") {
+      console.log("✅ Explicit escalation action detected");
       return true;
     }
 
     const escalationKeywords = [
-      'speak to agent',
-      'talk to human',
-      'customer service',
-      'customer support',
-      'need help',
-      'talk to representative',
-      'speak to someone',
-      'real person',
-      'human agent',
-      'escalate',
-      'manager',
-      'supervisor',
+      "speak to agent",
+      "talk to human",
+      "customer service",
+      "customer support",
+      "need help",
+      "talk to representative",
+      "speak to someone",
+      "real person",
+      "human agent",
+      "escalate",
+      "manager",
+      "supervisor",
     ];
 
     const messageLower = userMessage.toLowerCase();
+    console.log("🔍 Message (lowercase):", messageLower);
 
-    return escalationKeywords.some(keyword =>
-      messageLower.includes(keyword)
-    );
+    for (const keyword of escalationKeywords) {
+      if (messageLower.includes(keyword)) {
+        console.log(`✅ ESCALATION KEYWORD MATCH: "${keyword}"`);
+        return true;
+      }
+    }
+
+    console.log("❌ No escalation keywords found");
+    console.log("🔍 ==========================================");
+    return false;
   }
 
   /**
@@ -124,8 +167,8 @@ export class EscalationService {
    */
   static getContactInfo() {
     return {
-      phone: '877.335.7589',
-      email: 'solutioncenter@pltw.org',
+      phone: "877.335.7589",
+      email: "solutioncenter@pltw.org",
     };
   }
 
