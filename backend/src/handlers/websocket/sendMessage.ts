@@ -2,7 +2,6 @@ import { APIGatewayProxyResultV2 } from 'aws-lambda';
 import { DynamoDBService } from '../../services/dynamodb.service.js';
 import { BedrockService } from '../../services/bedrock.service.js';
 import { WebSocketService } from '../../services/websocket.service.js';
-import { UploadService } from '../../services/upload.service.js';
 import { TranslateService } from '../../services/translate.service.js';
 import { CategorizationService } from '../../services/categorization.service.js';
 import {
@@ -11,13 +10,11 @@ import {
   ConversationCategory,
   WebSocketMessage,
   WebSocketMessageEvent,
-  FileAttachment
 } from '../../types/index.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const dynamoDBService = new DynamoDBService();
 const bedrockService = new BedrockService();
-const uploadService = new UploadService();
 const translateService = new TranslateService();
 const categorizationService = new CategorizationService(dynamoDBService);
 
@@ -30,10 +27,9 @@ export const handler = async (
 
   try {
     const body: WebSocketMessage = JSON.parse(event.body || '{}');
-    const { message, conversationId: existingConversationId, action, category, fileIds, language = 'en' } = body;
+    const { message, conversationId: existingConversationId, action, category, language = 'en' } = body;
 
     console.log(`Received action: ${action} from connection: ${connectionId}`);
-    console.log(`FileIds received: ${JSON.stringify(fileIds)}`);
     console.log(`Language: ${language}`);
 
     if (action === 'escalate') {
@@ -79,23 +75,12 @@ export const handler = async (
       }
     }
 
-    // Fetch and validate file attachments if fileIds are provided
-    let attachments: FileAttachment[] | undefined;
-    if (fileIds && fileIds.length > 0) {
-      console.log(`Fetching attachments for fileIds: ${JSON.stringify(fileIds)}`);
-      attachments = await fetchAndValidateAttachments(fileIds);
-      console.log(`Fetched ${attachments.length} attachments: ${JSON.stringify(attachments.map(a => ({ fileId: a.fileId, filename: a.filename, contentType: a.contentType })))}`);
-    } else {
-      console.log('No fileIds provided in message');
-    }
-
     const userMessage: Message = {
       messageId: uuidv4(),
       conversationId,
       content: message!,
       role: 'user',
       timestamp: Date.now(),
-      ...(attachments && attachments.length > 0 && { attachments }),
     };
     await dynamoDBService.addMessageToConversation(conversationId, userMessage);
 
@@ -111,9 +96,7 @@ export const handler = async (
       console.log(`Translated user message to English: ${messageForBedrock}`);
     }
 
-    const { response, confidence, sources } = attachments && attachments.length > 0 && bedrockService.hasAnalyzableAttachments(attachments)
-      ? await bedrockService.analyzeWithAttachments(messageForBedrock, attachments, conversationId)
-      : await bedrockService.invokeAgent(messageForBedrock, conversationId);
+    const { response, confidence, sources } = await bedrockService.invokeAgent(messageForBedrock, conversationId);
 
     // Translate response to Spanish if Spanish is selected
     let finalResponse = response;
@@ -180,31 +163,4 @@ async function handleEscalation(
       email: 'solutioncenter@pltw.org',
     },
   });
-}
-
-/**
- * Fetches file metadata for provided fileIds and validates all files are in "uploaded" status.
- * 
- * @param fileIds - Array of file IDs to fetch and validate
- * @returns Array of validated FileAttachment records
- * @throws Error if any file is not found or not in "uploaded" status
- */
-async function fetchAndValidateAttachments(fileIds: string[]): Promise<FileAttachment[]> {
-  const attachments: FileAttachment[] = [];
-
-  for (const fileId of fileIds) {
-    const fileMetadata = await uploadService.getFileMetadata(fileId);
-
-    if (!fileMetadata) {
-      throw new Error(`File not found: ${fileId}`);
-    }
-
-    if (fileMetadata.status !== 'uploaded') {
-      throw new Error(`File ${fileId} is not in uploaded status. Current status: ${fileMetadata.status}`);
-    }
-
-    attachments.push(fileMetadata);
-  }
-
-  return attachments;
 }

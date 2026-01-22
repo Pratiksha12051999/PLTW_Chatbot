@@ -292,6 +292,9 @@ export default function AdminDashboard() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Date / Time
                   </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -317,8 +320,7 @@ export default function AdminDashboard() {
                   return (
                     <tr 
                       key={idx} 
-                      className="hover:bg-gray-100 cursor-pointer transition-colors"
-                      onClick={() => handleConversationClick(conv)}
+                      className="hover:bg-gray-50 transition-colors"
                     >
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {conv.category}
@@ -330,6 +332,14 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {formatDate(conv.startTime)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <button
+                          onClick={() => handleConversationClick(conv)}
+                          className="px-3 py-1.5 bg-blue-900 text-white text-xs font-medium rounded-lg hover:bg-blue-800 transition-colors"
+                        >
+                          View
+                        </button>
                       </td>
                     </tr>
                   );

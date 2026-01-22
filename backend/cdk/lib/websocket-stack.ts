@@ -2,7 +2,6 @@ import * as cdk from 'aws-cdk-lib';
 import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { WebSocketLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { Construct } from 'constructs';
@@ -11,8 +10,6 @@ import * as path from 'path';
 interface WebSocketStackProps extends cdk.StackProps {
   connectionsTable: dynamodb.Table;
   conversationsTable: dynamodb.Table;
-  fileAttachmentsTable: dynamodb.Table;
-  uploadsBucket: s3.IBucket;
 }
 
 export class WebSocketStack extends cdk.Stack {
@@ -22,7 +19,7 @@ export class WebSocketStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: WebSocketStackProps) {
     super(scope, id, props);
 
-    const { connectionsTable, conversationsTable, fileAttachmentsTable, uploadsBucket } = props;
+    const { connectionsTable, conversationsTable } = props;
 
     // Path to BUNDLED Lambda code - FIXED PATH
     const lambdaCodePath = path.join(__dirname, '../../lambda-bundle');
@@ -59,8 +56,6 @@ export class WebSocketStack extends cdk.Stack {
       environment: {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         CONVERSATIONS_TABLE: conversationsTable.tableName,
-        FILE_ATTACHMENTS_TABLE: fileAttachmentsTable.tableName,
-        UPLOADS_BUCKET: uploadsBucket.bucketName,
         BEDROCK_AGENT_ID: process.env.BEDROCK_AGENT_ID || '',
         BEDROCK_AGENT_ALIAS_ID: process.env.BEDROCK_AGENT_ALIAS_ID || '',
         NOVA_PRO_MODEL_ID: process.env.NOVA_PRO_MODEL_ID || 'amazon.nova-pro-v1:0',
@@ -72,10 +67,6 @@ export class WebSocketStack extends cdk.Stack {
     connectionsTable.grantReadWriteData(disconnectHandler);
     connectionsTable.grantReadWriteData(sendMessageHandler);
     conversationsTable.grantReadWriteData(sendMessageHandler);
-    fileAttachmentsTable.grantReadData(sendMessageHandler);
-
-    // Grant S3 permissions for sendMessageHandler (read access for file metadata)
-    uploadsBucket.grantRead(sendMessageHandler);
 
     // Bedrock permissions for sendMessageHandler
     sendMessageHandler.addToRolePolicy(

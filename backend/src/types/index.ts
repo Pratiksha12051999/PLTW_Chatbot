@@ -1,52 +1,9 @@
-// File Upload Types
-export interface FileAttachment {
-  fileId: string;
-  conversationId: string;
-  messageId?: string;
-  filename: string;
-  contentType: string;
-  size: number;
-  s3Key: string;
-  uploadedAt: number;
-  status: 'pending' | 'uploaded' | 'deleted';
-  ttl?: number;
-}
-
-export interface PresignRequest {
-  filename: string;
-  contentType: string;
-  size: number;
-  conversationId?: string;
-}
-
-export interface PresignResponse {
-  presignedUrl: string;
-  fileId: string;
-  s3Key: string;
-  expiresIn: number;
-}
-
-export interface ConfirmRequest {
-  fileId: string;
-}
-
-export interface ConfirmResponse {
-  success: boolean;
-  file: FileAttachment;
-}
-
-export interface DownloadResponse {
-  presignedUrl: string;
-  expiresIn: number;
-}
-
 export interface Message {
   messageId: string;
   conversationId: string;
   content: string;
   role: 'user' | 'assistant' | 'system';
   timestamp: number;
-  attachments?: FileAttachment[];
   metadata?: {
     confidence?: number;
     sources?: string[];
@@ -104,7 +61,6 @@ export interface WebSocketMessage {
   message?: string;
   conversationId?: string;
   category?: string;
-  fileIds?: string[];
   language?: 'en' | 'es';
 }
 

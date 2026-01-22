@@ -1,10 +1,8 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
-import { Send, Paperclip, User, RefreshCw, X, CheckCircle, AlertCircle, Loader2, Download, ThumbsUp, ThumbsDown } from 'lucide-react';
-import { useWebSocket, FileAttachment } from '@/hooks/useWebSocket';
-import { useFileUpload, UploadingFile } from '@/hooks/useFileUpload';
-import { getDownloadUrl } from '@/lib/uploadApi';
+import React, { useState } from 'react';
+import { Send, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { adminAPI } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -210,119 +208,6 @@ const renderWithLinks = (
   });
 };
 
-// Format file size for display
-const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-};
-
-// Get file icon based on content type
-const getFileIcon = (contentType: string) => {
-  if (contentType.startsWith('image/')) {
-    return '🖼️';
-  }
-  if (contentType === 'application/pdf') {
-    return '📄';
-  }
-  if (contentType.includes('word') || contentType.includes('document')) {
-    return '📝';
-  }
-  if (contentType === 'text/plain') {
-    return '📃';
-  }
-  return '📎';
-};
-
-/**
- * Attachment link component that fetches download URL on click
- * Requirements: 5.2, 5.3
- */
-interface AttachmentLinkProps {
-  attachment: FileAttachment;
-  isUserMessage: boolean;
-}
-
-const AttachmentLink = ({ attachment, isUserMessage }: AttachmentLinkProps) => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleClick = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await getDownloadUrl(attachment.fileId);
-      // Open file in new tab
-      window.open(response.presignedUrl, '_blank', 'noopener,noreferrer');
-    } catch (err) {
-      console.error('Failed to get download URL:', err);
-      setError('Failed to download');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <button
-      onClick={handleClick}
-      disabled={isLoading}
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-        isUserMessage
-          ? 'bg-blue-800 hover:bg-blue-700 text-white'
-          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-      } ${isLoading ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
-      title={`Download ${attachment.filename}`}
-    >
-      <span className="text-base">{getFileIcon(attachment.contentType)}</span>
-      <div className="flex flex-col items-start min-w-0">
-        <span className="truncate max-w-[150px] font-medium">
-          {attachment.filename}
-        </span>
-        <span className={`text-xs ${isUserMessage ? 'text-blue-200' : 'text-gray-500'}`}>
-          {formatFileSize(attachment.size)}
-        </span>
-      </div>
-      {isLoading ? (
-        <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
-      ) : (
-        <Download className={`w-4 h-4 flex-shrink-0 ${isUserMessage ? 'text-blue-200' : 'text-gray-400'}`} />
-      )}
-      {error && (
-        <span className="text-xs text-red-400">{error}</span>
-      )}
-    </button>
-  );
-};
-
-/**
- * Renders attachments for a message
- * Requirements: 5.2
- */
-interface MessageAttachmentsProps {
-  attachments: FileAttachment[];
-  isUserMessage: boolean;
-}
-
-const MessageAttachments = ({ attachments, isUserMessage }: MessageAttachmentsProps) => {
-  if (!attachments || attachments.length === 0) return null;
-
-  return (
-    <div className="mt-2 flex flex-wrap gap-2">
-      {attachments.map((attachment) => (
-        <AttachmentLink
-          key={attachment.fileId}
-          attachment={attachment}
-          isUserMessage={isUserMessage}
-        />
-      ))}
-    </div>
-  );
-};
-
 export default function ChatWindow() {
   const [inputMessage, setInputMessage] = useState('');
   const [showWelcome, setShowWelcome] = useState(true);
@@ -333,7 +218,6 @@ export default function ChatWindow() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'positive' | 'negative'>>({});
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   
   const { language, setLanguage, translations } = useLanguage();
@@ -354,61 +238,22 @@ export default function ChatWindow() {
     resetChat,
   } = useWebSocket(WEBSOCKET_URL);
 
-  const {
-    uploadingFiles,
-    isUploading,
-    uploadFiles,
-    removeFile,
-    retryUpload,
-    getUploadedFileIds,
-    clearFiles,
-  } = useFileUpload();
-
   const { login, isAuthenticated } = useAuth();
 
   const handleSendMessage = async (content?: string, category: string = 'General') => {
     const messageToSend = content || inputMessage.trim();
-    console.log('handleSendMessage called:', { messageToSend, category, uploadingFilesLength: uploadingFiles.length, isUploading });
     
-    if (!messageToSend && uploadingFiles.length === 0) {
-      console.log('No message to send');
-      return;
-    }
-    
-    // Don't send if files are still uploading
-    if (isUploading) {
-      console.log('Files still uploading, not sending');
+    if (!messageToSend) {
       return;
     }
 
-    // Get file IDs for successfully uploaded files
-    const fileIds = getUploadedFileIds();
-    console.log('Sending message with fileIds:', fileIds);
-
-    sendMessage(messageToSend, category, fileIds.length > 0 ? fileIds : undefined, language);
+    sendMessage(messageToSend, category, undefined, language);
     setInputMessage('');
     setShowWelcome(false);
-    
-    // Clear uploaded files after sending
-    clearFiles();
   };
 
   const handleQuickQuestion = (question: string, category: string) => {
     handleSendMessage(question, category);
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files);
-      // Immediately start uploading files (Requirement 4.2)
-      uploadFiles(files, conversationId || undefined);
-      // Reset the input so the same file can be selected again
-      e.target.value = '';
-    }
-  };
-
-  const handleAttachClick = () => {
-    fileInputRef.current?.click();
   };
 
   const handleFeedback = async (messageId: string, satisfaction: 'positive' | 'negative') => {
@@ -429,7 +274,6 @@ export default function ChatWindow() {
   const resetToHome = () => {
     setShowWelcome(true);
     setInputMessage('');
-    clearFiles();
     resetChat();
     setFeedbackGiven({});
   };
@@ -695,13 +539,6 @@ export default function ChatWindow() {
                   {msg.role === 'assistant' && msg.metadata?.sources && (
                     <CitationDisplay sources={msg.metadata.sources} />
                   )}
-                  {/* Render attachments if present (Requirements: 5.2) */}
-                  {msg.attachments && msg.attachments.length > 0 && (
-                    <MessageAttachments
-                      attachments={msg.attachments}
-                      isUserMessage={msg.role === 'user'}
-                    />
-                  )}
                   <div className={`flex items-center justify-between mt-2 ${msg.role === 'user' ? '' : ''}`}>
                     <span className={`text-xs ${msg.role === 'user' ? 'opacity-80' : 'opacity-60'}`}>
                       {msg.timestamp ? formatDistanceToNow(new Date(msg.timestamp), { addSuffix: true }) : 'just now'}
@@ -779,97 +616,7 @@ export default function ChatWindow() {
       {/* Input Area */}
       <div className="bg-white border-t px-6 py-5 shadow-lg">
         <div className="max-w-4xl mx-auto">
-          {uploadingFiles.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-2">
-              {uploadingFiles.map((uploadFile: UploadingFile) => (
-                <div
-                  key={uploadFile.id}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
-                    uploadFile.status === 'error'
-                      ? 'bg-red-50 border border-red-200'
-                      : uploadFile.status === 'uploaded'
-                      ? 'bg-green-50 border border-green-200'
-                      : 'bg-gray-100'
-                  }`}
-                >
-                  {/* Status icon */}
-                  {uploadFile.status === 'pending' && (
-                    <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
-                  )}
-                  {uploadFile.status === 'uploading' && (
-                    <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
-                  )}
-                  {uploadFile.status === 'uploaded' && (
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                  )}
-                  {uploadFile.status === 'error' && (
-                    <AlertCircle className="w-4 h-4 text-red-500" />
-                  )}
-                  
-                  {/* File name and progress */}
-                  <div className="flex flex-col">
-                    <span className={`${
-                      uploadFile.status === 'error' ? 'text-red-700' : 'text-gray-700'
-                    }`}>
-                      {uploadFile.file.name}
-                    </span>
-                    {uploadFile.status === 'uploading' && (
-                      <div className="w-24 h-1 bg-gray-200 rounded-full mt-1">
-                        <div
-                          className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                          style={{ width: `${uploadFile.progress}%` }}
-                        />
-                      </div>
-                    )}
-                    {uploadFile.status === 'error' && uploadFile.error && (
-                      <span className="text-xs text-red-600">{uploadFile.error}</span>
-                    )}
-                  </div>
-                  
-                  {/* Retry button for failed uploads */}
-                  {uploadFile.status === 'error' && (
-                    <button
-                      onClick={() => retryUpload(uploadFile.id, conversationId || undefined)}
-                      className="p-1 text-red-500 hover:text-red-700 hover:bg-red-100 rounded transition-colors"
-                      title="Retry upload"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                    </button>
-                  )}
-                  
-                  {/* Remove button */}
-                  <button
-                    onClick={() => removeFile(uploadFile.id)}
-                    className={`p-1 rounded transition-colors ${
-                      uploadFile.status === 'error'
-                        ? 'text-red-500 hover:text-red-700 hover:bg-red-100'
-                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
-                    }`}
-                    title="Remove file"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
           <div className="flex items-center gap-3">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileSelect}
-              className="hidden"
-              multiple
-              accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.gif,.webp"
-            />
-            <button
-              onClick={handleAttachClick}
-              className="p-2.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <Paperclip className="w-5 h-5" />
-            </button>
-
             <input
               type="text"
               value={inputMessage}
@@ -882,9 +629,9 @@ export default function ChatWindow() {
 
             <button
               onClick={() => handleSendMessage()}
-              disabled={(!inputMessage.trim() && uploadingFiles.length === 0) || !isConnected || isUploading}
+              disabled={!inputMessage.trim() || !isConnected}
               className="p-3.5 bg-blue-900 text-white rounded-xl hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-md hover:shadow-lg"
-              title={isUploading ? 'Wait for uploads to complete' : 'Send message'}
+              title="Send message"
             >
               <Send className="w-5 h-5" />
             </button>

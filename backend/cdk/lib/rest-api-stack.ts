@@ -3,7 +3,6 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
-import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -12,8 +11,6 @@ import * as path from 'path';
 
 interface RestApiStackProps extends cdk.StackProps {
   conversationsTable: dynamodb.Table;
-  fileAttachmentsTable: dynamodb.Table;
-  uploadsBucket: s3.IBucket;
   userPool: cognito.IUserPool;
 }
 
@@ -23,11 +20,7 @@ export class RestApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: RestApiStackProps) {
     super(scope, id, props);
 
-    const { conversationsTable, fileAttachmentsTable, uploadsBucket, userPool } = props;
-
-    // ============================================
-    // CONSOLIDATED LAMBDA FUNCTIONS (3 total)
-    // ============================================
+    const { conversationsTable, userPool } = props;
 
     // 1. Admin Handler - handles /admin/metrics and /admin/conversations
     const adminHandler = new lambda.Function(this, 'AdminHandler', {
@@ -40,19 +33,7 @@ export class RestApiStack extends cdk.Stack {
       },
     });
 
-    // 2. Upload Handler - handles /upload/*
-    const uploadHandler = new lambda.Function(this, 'UploadHandler', {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'upload.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda-bundle')),
-      timeout: cdk.Duration.seconds(10),
-      environment: {
-        FILE_ATTACHMENTS_TABLE: fileAttachmentsTable.tableName,
-        UPLOADS_BUCKET: uploadsBucket.bucketName,
-      },
-    });
-
-    // 3. Feedback Handler - handles /feedback
+    // 2. Feedback Handler - handles /feedback
     const feedbackHandler = new lambda.Function(this, 'FeedbackHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'feedback.handler',
@@ -63,12 +44,12 @@ export class RestApiStack extends cdk.Stack {
       },
     });
 
-    // 4. Sentiment Handler - handles sentiment analysis for inactive conversations
+    // 3. Sentiment Handler - handles sentiment analysis for conversations
     const sentimentHandler = new lambda.Function(this, 'SentimentHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'sentiment.handler',
       code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda-bundle')),
-      timeout: cdk.Duration.seconds(60), // Longer timeout for batch processing
+      timeout: cdk.Duration.seconds(60),
       memorySize: 512,
       environment: {
         CONVERSATIONS_TABLE: conversationsTable.tableName,
@@ -85,11 +66,6 @@ export class RestApiStack extends cdk.Stack {
 
     // Feedback handler - read/write access to conversations table
     conversationsTable.grantReadWriteData(feedbackHandler);
-
-    // Upload handler - S3 and DynamoDB permissions
-    uploadsBucket.grantPut(uploadHandler);
-    uploadsBucket.grantRead(uploadHandler);
-    fileAttachmentsTable.grantReadWriteData(uploadHandler);
 
     // Sentiment handler - read/write access to conversations table + Bedrock
     conversationsTable.grantReadWriteData(sentimentHandler);
@@ -134,7 +110,6 @@ export class RestApiStack extends cdk.Stack {
 
     // Lambda integrations
     const adminIntegration = new apigateway.LambdaIntegration(adminHandler);
-    const uploadIntegration = new apigateway.LambdaIntegration(uploadHandler);
     const feedbackIntegration = new apigateway.LambdaIntegration(feedbackHandler);
 
     // ============================================
@@ -163,25 +138,6 @@ export class RestApiStack extends cdk.Stack {
 
     const feedback = this.api.root.addResource('feedback');
     feedback.addMethod('POST', feedbackIntegration);
-
-    // ============================================
-    // UPLOAD ENDPOINTS (public)
-    // ============================================
-
-    const upload = this.api.root.addResource('upload');
-    
-    // POST /upload/presign
-    const presign = upload.addResource('presign');
-    presign.addMethod('POST', uploadIntegration);
-
-    // POST /upload/confirm
-    const confirm = upload.addResource('confirm');
-    confirm.addMethod('POST', uploadIntegration);
-
-    // GET /upload/download/{fileId}
-    const download = upload.addResource('download');
-    const downloadFile = download.addResource('{fileId}');
-    downloadFile.addMethod('GET', uploadIntegration);
 
     // ============================================
     // OUTPUTS

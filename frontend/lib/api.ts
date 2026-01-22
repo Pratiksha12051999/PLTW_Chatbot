@@ -65,12 +65,6 @@ export interface Conversation {
     role: 'user' | 'assistant';
     content: string;
     timestamp: number;
-    attachments?: Array<{
-      fileId: string;
-      filename: string;
-      contentType: string;
-      size: number;
-    }>;
   }>;
 }
 

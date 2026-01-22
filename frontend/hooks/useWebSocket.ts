@@ -1,28 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-/**
- * File attachment interface matching backend FileAttachment type
- * Requirements: 5.1
- */
-export interface FileAttachment {
-  fileId: string;
-  conversationId: string;
-  messageId?: string;
-  filename: string;
-  contentType: string;
-  size: number;
-  s3Key: string;
-  uploadedAt: number;
-  status: 'pending' | 'uploaded' | 'deleted';
-}
-
 export interface Message {
   messageId: string;
   conversationId: string;
   content: string;
   role: 'user' | 'assistant';
   timestamp: number;
-  attachments?: FileAttachment[];
   metadata?: {
     confidence?: number;
     sources?: string[];
@@ -172,19 +155,16 @@ export const useWebSocket = (url: string) => {
     };
   }, [url]);
 
-  const sendMessage = useCallback((content: string, category: string = 'General', fileIds?: string[], language: 'en' | 'es' = 'en') => {
+  const sendMessage = useCallback((content: string, category: string = 'General', _fileIds?: string[], language: 'en' | 'es' = 'en') => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       // Immediately show typing indicator to prevent blank screen
       setIsTyping(true);
-      
-     
       
       const payload: {
         action: string;
         message: string;
         conversationId: string | null;
         category: string;
-        fileIds?: string[];
         language: 'en' | 'es';
       } = {
         action: 'sendMessage',
@@ -193,11 +173,6 @@ export const useWebSocket = (url: string) => {
         category,
         language
       };
-      
-      // Include fileIds if provided (Requirement 4.6)
-      if (fileIds && fileIds.length > 0) {
-        payload.fileIds = fileIds;
-      }
       
       wsRef.current.send(JSON.stringify(payload));
     } else {
