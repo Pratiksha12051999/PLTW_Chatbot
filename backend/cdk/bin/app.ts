@@ -7,6 +7,7 @@ import { RestApiStack } from '../lib/rest-api-stack';
 import { CognitoStack } from '../lib/cognito-stack';
 import { S3Stack } from '../lib/s3-stack';
 import { AmplifyStack } from '../lib/amplify-stack';
+import { SQSStack } from '../lib/sqs-stack';
 
 const app = new cdk.App();
 
@@ -32,6 +33,15 @@ const cognitoStack = new CognitoStack(app, 'CognitoStack', {
   },
 });
 
+// SQS Stack
+const sqsStack = new SQSStack(app, 'SQSStack', {
+  conversationsTable: dynamoDBStack.conversationsTable,
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION,
+  },
+});
+
 // S3 Stack for file uploads
 const s3Stack = new S3Stack(app, 'S3Stack', {
   env: {
@@ -46,6 +56,7 @@ const webSocketStack = new WebSocketStack(app, 'WebSocketStack', {
   connectionsTable: dynamoDBStack.connectionsTable,
   fileAttachmentsTable: dynamoDBStack.fileAttachmentsTable,
   uploadsBucket: s3Stack.uploadsBucket,
+  escalationQueue: sqsStack.escalationQueue,  // Add this line
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
@@ -69,6 +80,9 @@ webSocketStack.addDependency(s3Stack);
 restApiStack.addDependency(dynamoDBStack);
 restApiStack.addDependency(s3Stack);
 restApiStack.addDependency(cognitoStack);
+webSocketStack.addDependency(sqsStack);
+restApiStack.addDependency(sqsStack);
+sqsStack.addDependency(dynamoDBStack);
 
 
 // Amplify Stack (only if GitHub credentials provided)

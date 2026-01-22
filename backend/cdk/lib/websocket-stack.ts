@@ -3,6 +3,7 @@ import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { WebSocketLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { Construct } from 'constructs';
@@ -13,6 +14,7 @@ interface WebSocketStackProps extends cdk.StackProps {
   conversationsTable: dynamodb.Table;
   fileAttachmentsTable: dynamodb.Table;
   uploadsBucket: s3.IBucket;
+  escalationQueue: sqs.Queue;
 }
 
 export class WebSocketStack extends cdk.Stack {
@@ -22,9 +24,15 @@ export class WebSocketStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: WebSocketStackProps) {
     super(scope, id, props);
 
-    const { connectionsTable, conversationsTable, fileAttachmentsTable, uploadsBucket } = props;
+    const {
+      connectionsTable,
+      conversationsTable,
+      fileAttachmentsTable,
+      uploadsBucket,
+      escalationQueue
+    } = props;
 
-    // Path to BUNDLED Lambda code - FIXED PATH
+    // Path to BUNDLED Lambda code
     const lambdaCodePath = path.join(__dirname, '../../lambda-bundle');
 
     // Connect Handler
@@ -61,6 +69,7 @@ export class WebSocketStack extends cdk.Stack {
         CONVERSATIONS_TABLE: conversationsTable.tableName,
         FILE_ATTACHMENTS_TABLE: fileAttachmentsTable.tableName,
         UPLOADS_BUCKET: uploadsBucket.bucketName,
+        ESCALATION_QUEUE_URL: escalationQueue.queueUrl, // ADD THIS
         BEDROCK_AGENT_ID: process.env.BEDROCK_AGENT_ID || '',
         BEDROCK_AGENT_ALIAS_ID: process.env.BEDROCK_AGENT_ALIAS_ID || '',
         NOVA_PRO_MODEL_ID: process.env.NOVA_PRO_MODEL_ID || 'amazon.nova-pro-v1:0',
@@ -74,10 +83,13 @@ export class WebSocketStack extends cdk.Stack {
     conversationsTable.grantReadWriteData(sendMessageHandler);
     fileAttachmentsTable.grantReadData(sendMessageHandler);
 
-    // Grant S3 permissions for sendMessageHandler (read access for file metadata)
+    // Grant S3 permissions
     uploadsBucket.grantRead(sendMessageHandler);
 
-    // Bedrock permissions for sendMessageHandler
+    // Grant SQS permissions - ADD THIS
+    escalationQueue.grantSendMessages(sendMessageHandler);
+
+    // Bedrock permissions
     sendMessageHandler.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -92,7 +104,7 @@ export class WebSocketStack extends cdk.Stack {
       })
     );
 
-    // Explicit permission for Nova Pro model used in conversation categorization
+    // Nova Pro model permissions
     sendMessageHandler.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -103,7 +115,7 @@ export class WebSocketStack extends cdk.Stack {
       })
     );
 
-    // AWS Translate permissions for sendMessageHandler
+    // AWS Translate permissions
     sendMessageHandler.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -134,7 +146,7 @@ export class WebSocketStack extends cdk.Stack {
       autoDeploy: true,
     });
 
-    // WebSocket permissions for sendMessageHandler
+    // WebSocket permissions
     sendMessageHandler.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,

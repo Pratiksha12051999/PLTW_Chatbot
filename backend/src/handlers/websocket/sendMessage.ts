@@ -1,65 +1,41 @@
-import { APIGatewayProxyResultV2 } from 'aws-lambda';
 import { DynamoDBService } from '../../services/dynamodb.service.js';
 import { BedrockService } from '../../services/bedrock.service.js';
 import { WebSocketService } from '../../services/websocket.service.js';
-import { UploadService } from '../../services/upload.service.js';
-import { TranslateService } from '../../services/translate.service.js';
-import { CategorizationService } from '../../services/categorization.service.js';
-import {
-  Message,
-  Conversation,
-  ConversationCategory,
-  WebSocketMessage,
-  WebSocketMessageEvent,
-  FileAttachment
-} from '../../types/index.js';
+import { EscalationService } from '../../services/escalation.service.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const dynamoDBService = new DynamoDBService();
 const bedrockService = new BedrockService();
-const uploadService = new UploadService();
-const translateService = new TranslateService();
-const categorizationService = new CategorizationService(dynamoDBService);
 
-export const handler = async (
-  event: WebSocketMessageEvent
-): Promise<APIGatewayProxyResultV2> => {
+export const handler = async (event: any) => {
   const connectionId = event.requestContext.connectionId;
   const endpoint = `https://${event.requestContext.domainName}/${event.requestContext.stage}`;
   const wsService = new WebSocketService(endpoint);
 
   try {
-    const body: WebSocketMessage = JSON.parse(event.body || '{}');
-    const { message, conversationId: existingConversationId, action, category, fileIds, language = 'en' } = body;
+    const body = JSON.parse(event.body || '{}');
+    const { message, conversationId: existingConversationId, action, category } = body;
 
-    console.log(`Received action: ${action} from connection: ${connectionId}`);
-    console.log(`FileIds received: ${JSON.stringify(fileIds)}`);
-    console.log(`Language: ${language}`);
+    console.log(`Received message from connection: ${connectionId}`, { action, category });
 
-    if (action === 'escalate') {
-      await handleEscalation(connectionId, existingConversationId!, wsService);
-      return { statusCode: 200, body: 'Escalated' };
-    }
-
+    // Get connection
     const connection = await dynamoDBService.getConnection(connectionId);
     if (!connection) {
+      console.error('Connection not found:', connectionId);
       return { statusCode: 404, body: 'Connection not found' };
     }
 
-    let conversation: Conversation;
+    // Get or create conversation
+    let conversation;
     const conversationId = existingConversationId || uuidv4();
 
     if (existingConversationId) {
       const existing = await dynamoDBService.getConversation(existingConversationId);
       if (!existing) {
+        console.error('Conversation not found:', existingConversationId);
         return { statusCode: 404, body: 'Conversation not found' };
       }
       conversation = existing;
-      
-      // Update last activity time for existing conversations
-      await dynamoDBService.updateConversation(existingConversationId, {
-        lastActivityTime: Date.now(),
-      });
     } else {
       conversation = {
         conversationId,
@@ -67,144 +43,142 @@ export const handler = async (
         startTime: Date.now(),
         status: 'active',
         messages: [],
-        category: (category as ConversationCategory) || 'general',
+        category: category || 'General',
       };
       await dynamoDBService.saveConversation(conversation);
-
-      // Fire-and-forget categorization for new conversations without FAQ category
-      const shouldCategorize = !category || category.toLowerCase() === 'general';
-      console.log(`[Categorization] Checking trigger condition - category: "${category}", shouldTrigger: ${shouldCategorize}`);
-      if (shouldCategorize) {
-        categorizationService.categorizeConversationAsync(conversationId, message!);
-      }
+      console.log('Created new conversation:', conversationId);
     }
 
-    // Fetch and validate file attachments if fileIds are provided
-    let attachments: FileAttachment[] | undefined;
-    if (fileIds && fileIds.length > 0) {
-      console.log(`Fetching attachments for fileIds: ${JSON.stringify(fileIds)}`);
-      attachments = await fetchAndValidateAttachments(fileIds);
-      console.log(`Fetched ${attachments.length} attachments: ${JSON.stringify(attachments.map(a => ({ fileId: a.fileId, filename: a.filename, contentType: a.contentType })))}`);
-    } else {
-      console.log('No fileIds provided in message');
-    }
-
-    const userMessage: Message = {
+    // Save user message
+    const userMessage = {
       messageId: uuidv4(),
       conversationId,
-      content: message!,
+      content: message,
       role: 'user',
       timestamp: Date.now(),
-      ...(attachments && attachments.length > 0 && { attachments }),
     };
+
     await dynamoDBService.addMessageToConversation(conversationId, userMessage);
 
+    // Send acknowledgment
     await wsService.sendMessage(connectionId, {
       type: 'message_received',
       message: userMessage,
     });
 
-    // Translate user message to English if Spanish is selected
-    let messageForBedrock = message!;
-    if (language === 'es') {
-      messageForBedrock = await translateService.translateToEnglish(message!);
-      console.log(`Translated user message to English: ${messageForBedrock}`);
+    // CHECK FOR ESCALATION
+    const shouldEscalateNow = action === 'escalate' || EscalationService.shouldEscalate(message, action);
+
+    if (shouldEscalateNow) {
+      console.log('Escalation detected, adding to queue...');
+
+      try {
+        // Add to SQS queue
+        const { queuePosition, ticketId } = await EscalationService.addToQueue({
+          conversationId,
+          userId: connection.userId,
+          category: category || 'General',
+          userMessage: message,
+          timestamp: Date.now(),
+          contactInfo: EscalationService.getContactInfo(),
+        });
+
+        // Update conversation status
+        await dynamoDBService.updateConversation(conversationId, {
+          status: 'escalated',
+          escalationInfo: {
+            ticketId,
+            queuePosition,
+            escalatedAt: Date.now(),
+          },
+        });
+
+        // Create escalation message
+        const escalationMessage = {
+          messageId: uuidv4(),
+          conversationId,
+          content: `I understand you'd like to speak with a customer service representative. I've added you to our support queue.\n\n**Your Ticket Number:** ${ticketId}\n**Queue Position:** #${queuePosition}\n\nA representative will assist you shortly. Average wait time is approximately ${EscalationService.estimateWaitTime(queuePosition)} minutes.\n\n**Need immediate assistance?**\n📞 Phone: ${EscalationService.getContactInfo().phone}\n✉️ Email: ${EscalationService.getContactInfo().email}`,
+          role: 'assistant',
+          timestamp: Date.now(),
+          metadata: {
+            escalated: true,
+            ticketId,
+            queuePosition,
+          },
+        };
+
+        await dynamoDBService.addMessageToConversation(conversationId, escalationMessage);
+
+        // Send escalation response
+        await wsService.sendMessage(connectionId, {
+          type: 'escalated',
+          message: escalationMessage,
+          shouldEscalate: true,
+          contactInfo: EscalationService.getContactInfo(),
+          queueInfo: {
+            ticketId,
+            position: queuePosition,
+            estimatedWait: EscalationService.estimateWaitTime(queuePosition),
+          },
+        });
+
+        console.log('Escalation completed:', { ticketId, queuePosition });
+        return { statusCode: 200, body: 'Escalated' };
+      } catch (escalationError) {
+        console.error('Error during escalation:', escalationError);
+        // Continue with normal flow if escalation fails
+      }
     }
 
-    const { response, confidence, sources } = attachments && attachments.length > 0 && bedrockService.hasAnalyzableAttachments(attachments)
-      ? await bedrockService.analyzeWithAttachments(messageForBedrock, attachments, conversationId)
-      : await bedrockService.invokeAgent(messageForBedrock, conversationId);
+    // Normal flow - call Bedrock
+    console.log('Calling Bedrock agent...');
+    const { response, confidence, sources } = await bedrockService.invokeAgent(
+      message,
+      conversationId
+    );
 
-    // Translate response to Spanish if Spanish is selected
-    let finalResponse = response;
-    if (language === 'es') {
-      finalResponse = await translateService.translateToSpanish(response);
-      console.log(`Translated response to Spanish: ${finalResponse}`);
-    }
-
-    const assistantMessage: Message = {
+    const assistantMessage = {
       messageId: uuidv4(),
       conversationId,
-      content: finalResponse,
+      content: response,
       role: 'assistant',
       timestamp: Date.now(),
       metadata: { confidence, sources },
     };
+
     await dynamoDBService.addMessageToConversation(conversationId, assistantMessage);
 
+    // Check if should suggest escalation based on confidence
     const messageCount = conversation.messages.length + 2;
-    const shouldEscalate = bedrockService.shouldEscalate(confidence, messageCount);
-
-    // Auto-escalate with 'no_answer' reason when confidence is very low
-    if (confidence < 0.4 && conversation.status !== 'escalated') {
-      await dynamoDBService.updateConversation(conversationId, {
-        status: 'escalated',
-        endTime: Date.now(),
-        escalationReason: 'no_answer',
-      });
-    }
+    const shouldSuggestEscalation = bedrockService.shouldEscalate(confidence, messageCount);
 
     await wsService.sendMessage(connectionId, {
       type: 'assistant_response',
       message: assistantMessage,
-      shouldEscalate,
+      shouldEscalate: shouldSuggestEscalation,
+      contactInfo: shouldSuggestEscalation ? EscalationService.getContactInfo() : undefined,
     });
 
+    console.log('Message processed successfully');
     return { statusCode: 200, body: 'Message sent' };
+
   } catch (error) {
     console.error('Error handling message:', error);
-    await wsService.sendMessage(connectionId, {
-      type: 'error',
-      message: 'Failed to process message',
-    });
+
+    try {
+      await wsService.sendMessage(connectionId, {
+        type: 'error',
+        message: {
+          messageId: uuidv4(),
+          role: 'assistant',
+          content: 'I encountered an error processing your message. Please try again or contact support.',
+          timestamp: Date.now(),
+        },
+      });
+    } catch (wsError) {
+      console.error('Failed to send error message:', wsError);
+    }
+
     return { statusCode: 500, body: 'Internal error' };
   }
 };
-
-async function handleEscalation(
-  connectionId: string,
-  conversationId: string,
-  wsService: WebSocketService
-): Promise<void> {
-  await dynamoDBService.updateConversation(conversationId, {
-    status: 'escalated',
-    endTime: Date.now(),
-    escalationReason: 'requested_agent',
-  });
-
-  await wsService.sendMessage(connectionId, {
-    type: 'escalated',
-    message: 'Connecting you to our Solution Center...',
-    contactInfo: {
-      phone: '877.335.7589',
-      email: 'solutioncenter@pltw.org',
-    },
-  });
-}
-
-/**
- * Fetches file metadata for provided fileIds and validates all files are in "uploaded" status.
- * 
- * @param fileIds - Array of file IDs to fetch and validate
- * @returns Array of validated FileAttachment records
- * @throws Error if any file is not found or not in "uploaded" status
- */
-async function fetchAndValidateAttachments(fileIds: string[]): Promise<FileAttachment[]> {
-  const attachments: FileAttachment[] = [];
-
-  for (const fileId of fileIds) {
-    const fileMetadata = await uploadService.getFileMetadata(fileId);
-
-    if (!fileMetadata) {
-      throw new Error(`File not found: ${fileId}`);
-    }
-
-    if (fileMetadata.status !== 'uploaded') {
-      throw new Error(`File ${fileId} is not in uploaded status. Current status: ${fileMetadata.status}`);
-    }
-
-    attachments.push(fileMetadata);
-  }
-
-  return attachments;
-}

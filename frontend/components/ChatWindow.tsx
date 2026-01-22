@@ -13,7 +13,6 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import CitationDisplay from './CitationDisplay';
 
-
 const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'wss://q76me9fvqa.execute-api.us-east-1.amazonaws.com/prod';
 
 // Clean text by removing content in square brackets
@@ -72,38 +71,28 @@ const formatMessageContent = (content: string) => {
 
 // Format inline text (handle **bold**, URLs, and markdown links within text)
 const formatInlineText = (text: string): React.ReactNode => {
-  // First, handle markdown links [text](url)
-  // Then handle plain URLs
-  // Then handle bold text
-  
-  // Regex patterns
   const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
   const urlRegex = /(https?:\/\/[^\s<>"\]]+)/g;
   const boldRegex = /(\*\*.*?\*\*)/g;
-  
-  // Replace markdown links with placeholders first
+
   const links: { placeholder: string; text: string; url: string }[] = [];
   let processedText = text.replace(markdownLinkRegex, (match, linkText, url) => {
     const placeholder = `__MDLINK_${links.length}__`;
     links.push({ placeholder, text: linkText, url });
     return placeholder;
   });
-  
-  // Replace plain URLs with placeholders
+
   const plainUrls: { placeholder: string; url: string }[] = [];
   processedText = processedText.replace(urlRegex, (match) => {
-    // Skip if this URL is already part of a markdown link placeholder
     if (match.includes('__MDLINK_')) return match;
     const placeholder = `__URL_${plainUrls.length}__`;
     plainUrls.push({ placeholder, url: match });
     return placeholder;
   });
-  
-  // Split by bold markers
+
   const parts = processedText.split(boldRegex);
 
   return parts.map((part, idx) => {
-    // Handle bold text
     if (part.startsWith('**') && part.endsWith('**')) {
       const innerText = part.slice(2, -2);
       return (
@@ -116,32 +105,28 @@ const formatInlineText = (text: string): React.ReactNode => {
   });
 };
 
-// Helper function to render text with link placeholders replaced
 const renderWithLinks = (
-  text: string, 
+  text: string,
   mdLinks: { placeholder: string; text: string; url: string }[],
   plainUrls: { placeholder: string; url: string }[],
   keyPrefix: string
 ): React.ReactNode => {
-  // Check if text contains any placeholders
-  const hasPlaceholders = mdLinks.some(l => text.includes(l.placeholder)) || 
-                          plainUrls.some(u => text.includes(u.placeholder));
-  
+  const hasPlaceholders = mdLinks.some(l => text.includes(l.placeholder)) ||
+    plainUrls.some(u => text.includes(u.placeholder));
+
   if (!hasPlaceholders) {
     return text;
   }
-  
-  // Build regex to split by all placeholders
+
   const allPlaceholders = [
     ...mdLinks.map(l => l.placeholder),
     ...plainUrls.map(u => u.placeholder)
   ];
   const placeholderRegex = new RegExp(`(${allPlaceholders.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
-  
+
   const segments = text.split(placeholderRegex);
-  
+
   return segments.map((segment, segIdx) => {
-    // Check if this segment is a markdown link placeholder
     const mdLink = mdLinks.find(l => l.placeholder === segment);
     if (mdLink) {
       return (
@@ -159,34 +144,26 @@ const renderWithLinks = (
         </a>
       );
     }
-    
-    // Check if this segment is a plain URL placeholder
+
     const plainUrl = plainUrls.find(u => u.placeholder === segment);
     if (plainUrl) {
-      // Extract a friendly display text from the URL
       let displayText = plainUrl.url;
-      let domain = '';
       try {
         const urlObj = new URL(plainUrl.url);
-        domain = urlObj.hostname.replace('www.', '');
+        const domain = urlObj.hostname.replace('www.', '');
         const path = urlObj.pathname !== '/' ? urlObj.pathname : '';
         displayText = domain + path;
-        // Truncate path if too long, keep domain visible
         if (displayText.length > 40) {
           displayText = domain + (path.length > 15 ? path.substring(0, 12) + '...' : path);
         }
       } catch {
-        // Keep original URL if parsing fails, but truncate
         if (displayText.length > 40) {
           displayText = displayText.substring(0, 37) + '...';
         }
       }
-      
+
       return (
-        <span
-          key={`${keyPrefix}-url-${segIdx}`}
-          className="inline-block my-1"
-        >
+        <span key={`${keyPrefix}-url-${segIdx}`} className="inline-block my-1">
           <a
             href={plainUrl.url}
             target="_blank"
@@ -205,12 +182,11 @@ const renderWithLinks = (
         </span>
       );
     }
-    
+
     return segment;
   });
 };
 
-// Format file size for display
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -219,27 +195,14 @@ const formatFileSize = (bytes: number): string => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 };
 
-// Get file icon based on content type
 const getFileIcon = (contentType: string) => {
-  if (contentType.startsWith('image/')) {
-    return '🖼️';
-  }
-  if (contentType === 'application/pdf') {
-    return '📄';
-  }
-  if (contentType.includes('word') || contentType.includes('document')) {
-    return '📝';
-  }
-  if (contentType === 'text/plain') {
-    return '📃';
-  }
+  if (contentType.startsWith('image/')) return '🖼️';
+  if (contentType === 'application/pdf') return '📄';
+  if (contentType.includes('word') || contentType.includes('document')) return '📝';
+  if (contentType === 'text/plain') return '📃';
   return '📎';
 };
 
-/**
- * Attachment link component that fetches download URL on click
- * Requirements: 5.2, 5.3
- */
 interface AttachmentLinkProps {
   attachment: FileAttachment;
   isUserMessage: boolean;
@@ -256,7 +219,6 @@ const AttachmentLink = ({ attachment, isUserMessage }: AttachmentLinkProps) => {
 
     try {
       const response = await getDownloadUrl(attachment.fileId);
-      // Open file in new tab
       window.open(response.presignedUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
       console.error('Failed to get download URL:', err);
@@ -270,11 +232,10 @@ const AttachmentLink = ({ attachment, isUserMessage }: AttachmentLinkProps) => {
     <button
       onClick={handleClick}
       disabled={isLoading}
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-        isUserMessage
+      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${isUserMessage
           ? 'bg-blue-800 hover:bg-blue-700 text-white'
           : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-      } ${isLoading ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
+        } ${isLoading ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
       title={`Download ${attachment.filename}`}
     >
       <span className="text-base">{getFileIcon(attachment.contentType)}</span>
@@ -291,17 +252,11 @@ const AttachmentLink = ({ attachment, isUserMessage }: AttachmentLinkProps) => {
       ) : (
         <Download className={`w-4 h-4 flex-shrink-0 ${isUserMessage ? 'text-blue-200' : 'text-gray-400'}`} />
       )}
-      {error && (
-        <span className="text-xs text-red-400">{error}</span>
-      )}
+      {error && <span className="text-xs text-red-400">{error}</span>}
     </button>
   );
 };
 
-/**
- * Renders attachments for a message
- * Requirements: 5.2
- */
 interface MessageAttachmentsProps {
   attachments: FileAttachment[];
   isUserMessage: boolean;
@@ -335,10 +290,9 @@ export default function ChatWindow() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
-  
+
   const { language, setLanguage, translations } = useLanguage();
-  
-  // Get topics from translations based on current language
+
   const currentTranslations = translations[language];
   const topicKeys = Object.keys(currentTranslations.topics) as Array<keyof typeof currentTranslations.topics>;
   const popularTopics = topicKeys.map(key => currentTranslations.topics[key]);
@@ -350,7 +304,10 @@ export default function ChatWindow() {
     shouldEscalate,
     contactInfo,
     conversationId,
+    queueInfo,
+    isEscalated,
     sendMessage,
+    escalateToAgent,
     resetChat,
   } = useWebSocket(WEBSOCKET_URL);
 
@@ -369,27 +326,24 @@ export default function ChatWindow() {
   const handleSendMessage = async (content?: string, category: string = 'General') => {
     const messageToSend = content || inputMessage.trim();
     console.log('handleSendMessage called:', { messageToSend, category, uploadingFilesLength: uploadingFiles.length, isUploading });
-    
+
     if (!messageToSend && uploadingFiles.length === 0) {
       console.log('No message to send');
       return;
     }
-    
-    // Don't send if files are still uploading
+
     if (isUploading) {
       console.log('Files still uploading, not sending');
       return;
     }
 
-    // Get file IDs for successfully uploaded files
     const fileIds = getUploadedFileIds();
     console.log('Sending message with fileIds:', fileIds);
 
     sendMessage(messageToSend, category, fileIds.length > 0 ? fileIds : undefined, language);
     setInputMessage('');
     setShowWelcome(false);
-    
-    // Clear uploaded files after sending
+
     clearFiles();
   };
 
@@ -400,9 +354,7 @@ export default function ChatWindow() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const files = Array.from(e.target.files);
-      // Immediately start uploading files (Requirement 4.2)
       uploadFiles(files, conversationId || undefined);
-      // Reset the input so the same file can be selected again
       e.target.value = '';
     }
   };
@@ -413,7 +365,7 @@ export default function ChatWindow() {
 
   const handleFeedback = async (messageId: string, satisfaction: 'positive' | 'negative') => {
     if (!conversationId || feedbackGiven[messageId]) return;
-    
+
     try {
       await adminAPI.submitFeedback({
         conversationId,
@@ -448,8 +400,6 @@ export default function ChatWindow() {
       if (result.isSignedIn) {
         console.log('Login successful! Redirecting...');
         setShowAdminLogin(false);
-
-        // Use Next.js router for navigation
         router.push('/admin');
       } else if (result.nextStep?.signInStep === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED') {
         setLoginError('You need to change your password. Please contact support.');
@@ -498,29 +448,25 @@ export default function ChatWindow() {
         <div className="flex items-center bg-gray-100 rounded-lg p-1">
           <button
             onClick={() => setLanguage('en')}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-              language === 'en'
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${language === 'en'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
-            }`}
+              }`}
             title="English"
           >
             EN
           </button>
           <button
             onClick={() => setLanguage('es')}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-              language === 'es'
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${language === 'es'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
-            }`}
+              }`}
             title="Español"
           >
             ES
           </button>
         </div>
-
-
       </header>
 
       {/* Admin Login Modal */}
@@ -610,12 +556,13 @@ export default function ChatWindow() {
                 }}
                 className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
               >
-                Permanently Delete
+                Clear Chat
               </button>
             </div>
           </div>
         </div>
       )}
+
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto px-6 py-8">
         {showWelcome ? (
@@ -670,17 +617,63 @@ export default function ChatWindow() {
           </div>
         ) : (
           <div className="max-w-4xl mx-auto space-y-6">
+            {/* Queue Status Display */}
+            {isEscalated && queueInfo && (
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 mb-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
+                    <span className="text-white text-2xl font-bold">#{queueInfo.position}</span>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-blue-900 text-xl">You're in Queue!</h4>
+                    <p className="text-sm text-blue-700">Ticket: {queueInfo.ticketId}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3 text-sm text-blue-800">
+                  <div className="flex items-center justify-between py-2 border-b border-blue-200">
+                    <span className="font-medium">Queue Position:</span>
+                    <span className="text-lg font-bold">#{queueInfo.position}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-b border-blue-200">
+                    <span className="font-medium">Estimated Wait:</span>
+                    <span className="text-lg font-bold">~{queueInfo.estimatedWait} minutes</span>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-blue-200 bg-white rounded-lg p-4">
+                    <p className="font-semibold mb-3 text-blue-900">Need immediate assistance?</p>
+                    <div className="space-y-2">
+                      <a
+                        href="tel:877-335-7589"
+                        className="flex items-center gap-2 text-blue-700 hover:text-blue-900 transition-colors"
+                      >
+                        <span>📞</span>
+                        <span>877.335.7589</span>
+                      </a>
+                      <a
+                        href="mailto:solutioncenter@pltw.org"
+                        className="flex items-center gap-2 text-blue-700 hover:text-blue-900 transition-colors"
+                      >
+                        <span>✉️</span>
+                        <span>solutioncenter@pltw.org</span>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Messages */}
             {messages.map((msg, idx) => (
               <div
                 key={msg.messageId || idx}
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[80%] rounded-2xl px-5 py-4 ${
-                    msg.role === 'user'
+                  className={`max-w-[80%] rounded-2xl px-5 py-4 ${msg.role === 'user'
                       ? 'bg-blue-900 text-white'
                       : 'bg-white text-gray-900 shadow-sm border border-gray-200'
-                  }`}
+                    }`}
                 >
                   <div className="text-base leading-relaxed">
                     {msg.role === 'user' ? (
@@ -691,34 +684,34 @@ export default function ChatWindow() {
                       </div>
                     )}
                   </div>
-                  {/* Render citations for assistant messages */}
+
                   {msg.role === 'assistant' && msg.metadata?.sources && (
                     <CitationDisplay sources={msg.metadata.sources} />
                   )}
-                  {/* Render attachments if present (Requirements: 5.2) */}
+
                   {msg.attachments && msg.attachments.length > 0 && (
                     <MessageAttachments
                       attachments={msg.attachments}
                       isUserMessage={msg.role === 'user'}
                     />
                   )}
-                  <div className={`flex items-center justify-between mt-2 ${msg.role === 'user' ? '' : ''}`}>
+
+                  <div className={`flex items-center justify-between mt-2`}>
                     <span className={`text-xs ${msg.role === 'user' ? 'opacity-80' : 'opacity-60'}`}>
                       {msg.timestamp ? formatDistanceToNow(new Date(msg.timestamp), { addSuffix: true }) : 'just now'}
                     </span>
-                    {/* Feedback buttons for assistant messages */}
+
                     {msg.role === 'assistant' && (
                       <div className="flex gap-1 ml-3">
                         <button
                           onClick={() => handleFeedback(msg.messageId, 'positive')}
                           disabled={!!feedbackGiven[msg.messageId]}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            feedbackGiven[msg.messageId] === 'positive'
+                          className={`p-1.5 rounded-lg transition-colors ${feedbackGiven[msg.messageId] === 'positive'
                               ? 'bg-green-100 text-green-600'
                               : feedbackGiven[msg.messageId]
-                              ? 'text-gray-300 cursor-not-allowed'
-                              : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
-                          }`}
+                                ? 'text-gray-300 cursor-not-allowed'
+                                : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
+                            }`}
                           title="Helpful"
                         >
                           <ThumbsUp className="w-4 h-4" />
@@ -726,13 +719,12 @@ export default function ChatWindow() {
                         <button
                           onClick={() => handleFeedback(msg.messageId, 'negative')}
                           disabled={!!feedbackGiven[msg.messageId]}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            feedbackGiven[msg.messageId] === 'negative'
+                          className={`p-1.5 rounded-lg transition-colors ${feedbackGiven[msg.messageId] === 'negative'
                               ? 'bg-red-100 text-red-600'
                               : feedbackGiven[msg.messageId]
-                              ? 'text-gray-300 cursor-not-allowed'
-                              : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                          }`}
+                                ? 'text-gray-300 cursor-not-allowed'
+                                : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            }`}
                           title="Not helpful"
                         >
                           <ThumbsDown className="w-4 h-4" />
@@ -744,6 +736,7 @@ export default function ChatWindow() {
               </div>
             ))}
 
+            {/* Typing Indicator */}
             {isTyping && (
               <div className="flex justify-start">
                 <div className="bg-white rounded-2xl px-5 py-4 shadow-sm border border-gray-200">
@@ -756,19 +749,28 @@ export default function ChatWindow() {
               </div>
             )}
 
-            {shouldEscalate && contactInfo && (
+            {/* Escalation Suggestion Banner */}
+            {shouldEscalate && !isEscalated && contactInfo && (
               <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-5">
                 <h4 className="font-semibold text-yellow-900 mb-2 text-lg">Need Additional Help?</h4>
                 <p className="text-sm text-yellow-800 mb-4">
-                  For more complex questions, please contact our Solution Center:
+                  For more complex questions, you can talk to our support team or contact us directly:
                 </p>
-                <div className="space-y-2 text-sm">
-                  <p className="text-yellow-900 font-medium">
-                    📞 Phone: <a href={`tel:${contactInfo.phone}`} className="underline hover:text-yellow-700">{contactInfo.phone}</a>
-                  </p>
-                  <p className="text-yellow-900 font-medium">
-                    ✉️ Email: <a href={`mailto:${contactInfo.email}`} className="underline hover:text-yellow-700">{contactInfo.email}</a>
-                  </p>
+                <div className="space-y-3">
+                  <button
+                    onClick={escalateToAgent}
+                    className="w-full px-4 py-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    🆘 Connect with Human Agent
+                  </button>
+                  <div className="text-sm space-y-1">
+                    <p className="text-yellow-900 font-medium">
+                      📞 Phone: <a href={`tel:${contactInfo.phone}`} className="underline hover:text-yellow-700">{contactInfo.phone}</a>
+                    </p>
+                    <p className="text-yellow-900 font-medium">
+                      ✉️ Email: <a href={`mailto:${contactInfo.email}`} className="underline hover:text-yellow-700">{contactInfo.email}</a>
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -779,20 +781,19 @@ export default function ChatWindow() {
       {/* Input Area */}
       <div className="bg-white border-t px-6 py-5 shadow-lg">
         <div className="max-w-4xl mx-auto">
+          {/* Uploading Files Display */}
           {uploadingFiles.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {uploadingFiles.map((uploadFile: UploadingFile) => (
                 <div
                   key={uploadFile.id}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
-                    uploadFile.status === 'error'
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${uploadFile.status === 'error'
                       ? 'bg-red-50 border border-red-200'
                       : uploadFile.status === 'uploaded'
-                      ? 'bg-green-50 border border-green-200'
-                      : 'bg-gray-100'
-                  }`}
+                        ? 'bg-green-50 border border-green-200'
+                        : 'bg-gray-100'
+                    }`}
                 >
-                  {/* Status icon */}
                   {uploadFile.status === 'pending' && (
                     <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
                   )}
@@ -805,12 +806,10 @@ export default function ChatWindow() {
                   {uploadFile.status === 'error' && (
                     <AlertCircle className="w-4 h-4 text-red-500" />
                   )}
-                  
-                  {/* File name and progress */}
+
                   <div className="flex flex-col">
-                    <span className={`${
-                      uploadFile.status === 'error' ? 'text-red-700' : 'text-gray-700'
-                    }`}>
+                    <span className={`${uploadFile.status === 'error' ? 'text-red-700' : 'text-gray-700'
+                      }`}>
                       {uploadFile.file.name}
                     </span>
                     {uploadFile.status === 'uploading' && (
@@ -825,8 +824,7 @@ export default function ChatWindow() {
                       <span className="text-xs text-red-600">{uploadFile.error}</span>
                     )}
                   </div>
-                  
-                  {/* Retry button for failed uploads */}
+
                   {uploadFile.status === 'error' && (
                     <button
                       onClick={() => retryUpload(uploadFile.id, conversationId || undefined)}
@@ -836,15 +834,13 @@ export default function ChatWindow() {
                       <RefreshCw className="w-4 h-4" />
                     </button>
                   )}
-                  
-                  {/* Remove button */}
+
                   <button
                     onClick={() => removeFile(uploadFile.id)}
-                    className={`p-1 rounded transition-colors ${
-                      uploadFile.status === 'error'
+                    className={`p-1 rounded transition-colors ${uploadFile.status === 'error'
                         ? 'text-red-500 hover:text-red-700 hover:bg-red-100'
                         : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
-                    }`}
+                      }`}
                     title="Remove file"
                   >
                     <X className="w-4 h-4" />
@@ -866,6 +862,7 @@ export default function ChatWindow() {
             <button
               onClick={handleAttachClick}
               className="p-2.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Attach files"
             >
               <Paperclip className="w-5 h-5" />
             </button>
@@ -874,7 +871,7 @@ export default function ChatWindow() {
               type="text"
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
               placeholder="Ask a question..."
               className="flex-1 px-4 py-3.5 text-base text-gray-900 placeholder-gray-400 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent"
               disabled={!isConnected}
@@ -889,7 +886,6 @@ export default function ChatWindow() {
               <Send className="w-5 h-5" />
             </button>
 
-            {/* Clear Chat button - only show when conversation is active */}
             {!showWelcome && (
               <button
                 onClick={() => setShowClearConfirm(true)}
