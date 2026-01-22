@@ -8,7 +8,7 @@ export interface Message {
   timestamp: number;
   metadata?: {
     confidence?: number;
-    sources?: unknown;
+    sources?: any;
     escalated?: boolean;
     ticketId?: string;
     queuePosition?: number;
