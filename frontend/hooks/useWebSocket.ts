@@ -46,7 +46,7 @@ export const useWebSocket = (url: string) => {
   const [isEscalated, setIsEscalated] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number>();
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
 
   const connect = useCallback(() => {
