@@ -1,12 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-export interface Source {
-  title?: string;
-  url?: string;
-  snippet?: string;
-  [key: string]: any; // Allow additional properties if needed
-}
-
 export interface Message {
   messageId: string;
   conversationId: string;
@@ -15,7 +8,7 @@ export interface Message {
   timestamp: number;
   metadata?: {
     confidence?: number;
-    sources?: Source[];
+    sources?: unknown;
     escalated?: boolean;
     ticketId?: string;
     queuePosition?: number;
