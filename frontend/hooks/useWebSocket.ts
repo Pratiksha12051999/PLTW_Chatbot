@@ -68,10 +68,12 @@ export const useWebSocket = (url: string) => {
     if (reconnectAttemptsRef.current < 5) {
       const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
       console.log(`🔄 Reconnecting in ${delay}ms...`);
-      reconnectTimeoutRef.current = window.setTimeout(() => {
+      reconnectTimeoutRef.current = setTimeout(() => {
         reconnectAttemptsRef.current++;
         connect();
       }, delay);
+    } else {
+      console.error('❌ Max reconnection attempts reached');
     }
   };
 
