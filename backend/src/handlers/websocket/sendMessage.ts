@@ -108,6 +108,10 @@ export const handler = async (
         "🎫 Reason:",
         action === "escalate" ? "EXPLICIT_ACTION" : "KEYWORD_DETECTION",
       );
+      console.log("🎫 Conversation ID:", conversationId);
+      console.log("🎫 User ID:", connection.userId);
+      console.log("🎫 Language:", language); // Log the language
+      console.log("🎫 Adding to escalation queue...");
 
       try {
         const escalationPayload = {
@@ -119,32 +123,64 @@ export const handler = async (
           contactInfo: EscalationService.getContactInfo(),
         };
 
+        console.log(
+          "🎫 Escalation payload:",
+          JSON.stringify(escalationPayload, null, 2),
+        );
+
         const { queuePosition, ticketId } =
           await EscalationService.addToQueue(escalationPayload);
 
+        console.log("✅ ===== ESCALATION SUCCESS =====");
         console.log("✅ Ticket ID:", ticketId);
         console.log("✅ Queue Position:", queuePosition);
+        console.log(
+          "✅ Estimated Wait:",
+          EscalationService.estimateWaitTime(queuePosition),
+          "minutes",
+        );
+        console.log("✅ ================================");
 
+        // Update conversation status with escalation info
         await dynamoDBService.updateConversation(conversationId, {
           status: "escalated",
           endTime: Date.now(),
           escalationReason:
             action === "escalate" ? "requested_agent" : "no_answer",
+          escalationInfo: {
+            ticketId,
+            queuePosition,
+            escalatedAt: Date.now(),
+          },
         });
 
+        console.log("✅ Conversation updated with escalation status");
+
+        // Create escalation message with appropriate language
         const escalationMessage: Message = {
           messageId: uuidv4(),
           conversationId,
-          content: `I understand you'd like to speak with a customer service representative. I've added you to our support queue.\n\n**Your Ticket Number:** ${ticketId}\n**Queue Position:** #${queuePosition}\n\nA representative will assist you shortly. Average wait time is approximately ${EscalationService.estimateWaitTime(queuePosition)} minutes.\n\n**Need immediate assistance?**\n📞 Phone: ${EscalationService.getContactInfo().phone}\n✉️ Email: ${EscalationService.getContactInfo().email}`,
+          content: EscalationService.getEscalationMessage(
+            ticketId,
+            queuePosition,
+            language, // ← Pass the language parameter
+          ),
           role: "assistant",
           timestamp: Date.now(),
+          metadata: {
+            escalated: true,
+            ticketId,
+            queuePosition,
+          },
         };
 
         await dynamoDBService.addMessageToConversation(
           conversationId,
           escalationMessage,
         );
+        console.log("✅ Escalation message saved to conversation");
 
+        // Send escalation response
         await wsService.sendMessage(connectionId, {
           type: "escalated",
           message: escalationMessage,
@@ -157,9 +193,16 @@ export const handler = async (
           },
         });
 
+        console.log("✅ Escalation response sent to client");
+        console.log("🎫 ===== ESCALATION COMPLETE =====");
         return { statusCode: 200, body: "Escalated" };
       } catch (escalationError) {
-        console.error("❌ Escalation failed:", escalationError);
+        console.error("❌ ===== ESCALATION FAILED =====");
+        console.error("❌ Error:", escalationError);
+        console.error("❌ Error message:", (escalationError as Error).message);
+        console.error("❌ Stack trace:", (escalationError as Error).stack);
+        console.error("❌ ===============================");
+        // Continue with normal flow if escalation fails
       }
     }
 

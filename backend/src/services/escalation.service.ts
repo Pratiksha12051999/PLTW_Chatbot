@@ -4,8 +4,23 @@ import {
   GetQueueAttributesCommand,
 } from "@aws-sdk/client-sqs";
 
+console.log("=== ESCALATION SERVICE MODULE LOADING ===");
+console.log(
+  "ESCALATION_QUEUE_URL:",
+  process.env.ESCALATION_QUEUE_URL ? "✅ SET" : "❌ MISSING",
+);
+console.log("AWS_REGION:", process.env.AWS_REGION || "❌ MISSING");
+
+const QUEUE_URL = process.env.ESCALATION_QUEUE_URL;
+
+if (!QUEUE_URL) {
+  console.error("❌ CRITICAL ERROR: Missing ESCALATION_QUEUE_URL");
+  throw new Error(
+    "Missing required environment variable: ESCALATION_QUEUE_URL",
+  );
+}
+
 const sqsClient = new SQSClient({ region: process.env.AWS_REGION });
-const QUEUE_URL = process.env.ESCALATION_QUEUE_URL || "";
 
 interface EscalationTicket {
   conversationId: string;
@@ -119,7 +134,7 @@ export class EscalationService {
   }
 
   /**
-   * Check if message should trigger escalation
+   * Check if message should trigger escalation (supports English and Spanish)
    */
   static shouldEscalate(userMessage: string, action?: string): boolean {
     console.log("🔍 ===== CHECKING ESCALATION KEYWORDS =====");
@@ -132,7 +147,8 @@ export class EscalationService {
       return true;
     }
 
-    const escalationKeywords = [
+    // English keywords
+    const englishKeywords = [
       "speak to agent",
       "talk to human",
       "customer service",
@@ -145,12 +161,42 @@ export class EscalationService {
       "escalate",
       "manager",
       "supervisor",
+      "speak with someone",
+      "talk to someone",
+      "connect me",
+      "transfer me",
     ];
 
+    // Spanish keywords
+    const spanishKeywords = [
+      "hablar con agente",
+      "hablar con un agente",
+      "hablar con humano",
+      "hablar con persona",
+      "servicio al cliente",
+      "atención al cliente",
+      "necesito ayuda",
+      "hablar con representante",
+      "hablar con alguien",
+      "persona real",
+      "agente humano",
+      "escalar",
+      "gerente",
+      "supervisor",
+      "conectarme",
+      "transferirme",
+      "quiero hablar",
+      "necesito hablar",
+      "hablar en español",
+      "asistente humano",
+      "operador",
+    ];
+
+    const allKeywords = [...englishKeywords, ...spanishKeywords];
     const messageLower = userMessage.toLowerCase();
     console.log("🔍 Message (lowercase):", messageLower);
 
-    for (const keyword of escalationKeywords) {
+    for (const keyword of allKeywords) {
       if (messageLower.includes(keyword)) {
         console.log(`✅ ESCALATION KEYWORD MATCH: "${keyword}"`);
         return true;
@@ -170,6 +216,43 @@ export class EscalationService {
       phone: "877.335.7589",
       email: "solutioncenter@pltw.org",
     };
+  }
+
+  /**
+   * Get escalation message in the appropriate language
+   */
+  static getEscalationMessage(
+    ticketId: string,
+    queuePosition: number,
+    language: string = "en",
+  ): string {
+    const waitTime = this.estimateWaitTime(queuePosition);
+    const contactInfo = this.getContactInfo();
+
+    if (language === "es") {
+      return `Entiendo que le gustaría hablar con un representante de servicio al cliente. Lo he agregado a nuestra cola de soporte.
+
+**Su Número de Ticket:** ${ticketId}
+**Posición en la Cola:** #${queuePosition}
+
+Un representante lo atenderá en breve. El tiempo de espera promedio es de aproximadamente ${waitTime} minutos.
+
+**¿Necesita asistencia inmediata?**
+📞 Teléfono: ${contactInfo.phone}
+✉️ Correo electrónico: ${contactInfo.email}`;
+    }
+
+    // Default: English
+    return `I understand you'd like to speak with a customer service representative. I've added you to our support queue.
+
+**Your Ticket Number:** ${ticketId}
+**Queue Position:** #${queuePosition}
+
+A representative will assist you shortly. Average wait time is approximately ${waitTime} minutes.
+
+**Need immediate assistance?**
+📞 Phone: ${contactInfo.phone}
+✉️ Email: ${contactInfo.email}`;
   }
 
   /**
