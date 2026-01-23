@@ -56,8 +56,28 @@ function parseSource(uri: string): ParsedSource | null {
 }
 
 /**
+ * Normalizes a URL for deduplication by removing trailing slashes,
+ * query parameters, and fragments
+ */
+function normalizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    // Remove query params and fragments, normalize path
+    let normalized = `${parsed.protocol}//${parsed.hostname}${parsed.pathname}`;
+    // Remove trailing slash unless it's the root
+    if (normalized.endsWith('/') && parsed.pathname !== '/') {
+      normalized = normalized.slice(0, -1);
+    }
+    return normalized.toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+/**
  * Parses and deduplicates an array of source URIs
  * Only returns website sources, filters out documents
+ * Normalizes URLs to prevent duplicates with slight variations
  */
 function parseSources(uris: string[]): ParsedSource[] {
   const seen = new Set<string>();
@@ -65,9 +85,12 @@ function parseSources(uris: string[]): ParsedSource[] {
 
   for (const uri of uris) {
     const source = parseSource(uri);
-    if (source && !seen.has(source.url)) {
-      seen.add(source.url);
-      parsed.push(source);
+    if (source) {
+      const normalizedUrl = normalizeUrl(source.url);
+      if (!seen.has(normalizedUrl)) {
+        seen.add(normalizedUrl);
+        parsed.push(source);
+      }
     }
   }
 
@@ -97,7 +120,7 @@ export default function CitationDisplay({ sources }: CitationDisplayProps) {
       <div className="flex flex-wrap gap-2">
         {parsedSources.map((source, index) => (
           <a
-            key={`${source.url}-${index}`}
+            key={index}
             href={source.url}
             target="_blank"
             rel="noopener noreferrer"
