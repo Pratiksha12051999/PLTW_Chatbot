@@ -1,14 +1,11 @@
 version: 0.2
 
 # PLTW Chatbot - CodeBuild Build Specification
-# This file defines how CodeBuild will build and deploy your application
+# Matches actual repo structure: backend/cdk/ and backend/src/handlers/
 
 env:
   variables:
     NODE_VERSION: "20"
-  parameter-store:
-    # Add any secrets from Parameter Store here if needed
-    # GITHUB_TOKEN: /codebuild/github-token
   exported-variables:
     - AWS_REGION
     - ENVIRONMENT
@@ -27,20 +24,22 @@ phases:
       - npm install -g aws-cdk
       - echo "CDK version:" $(cdk --version)
 
-      # Install project dependencies
+      # Install backend dependencies (includes Lambda handlers)
       - echo "Installing backend dependencies..."
-      - npm install
-
-      # Install CDK dependencies
-      - echo "Installing CDK dependencies..."
-      - cd cdk
+      - cd backend
       - npm install
       - cd ..
 
+      # Install CDK dependencies
+      - echo "Installing CDK dependencies..."
+      - cd backend/cdk
+      - npm install
+      - cd ../..
+
       # Install frontend dependencies
       - echo "Installing frontend dependencies..."
-      - cd frontend || cd dist || echo "No frontend directory found"
-      - npm install || echo "No frontend package.json"
+      - cd frontend
+      - npm install
       - cd ..
 
   pre_build:
@@ -49,8 +48,10 @@ phases:
       - echo "ACTION=${ACTION}"
       - echo "ENVIRONMENT=${ENVIRONMENT}"
       - echo "AWS_REGION=${AWS_REGION}"
+      - echo "BEDROCK_AGENT_ID=${BEDROCK_AGENT_ID:0:10}..."
+      - echo "BEDROCK_AGENT_ALIAS_ID=${BEDROCK_AGENT_ALIAS_ID:0:10}..."
 
-      # Configure AWS credentials (already configured by CodeBuild)
+      # Configure AWS credentials
       - aws sts get-caller-identity
 
       # Export environment variables for CDK
@@ -60,56 +61,79 @@ phases:
       - |
         if [ "$ACTION" = "deploy" ]; then
           echo "🔨 Building Lambda functions..."
-          # Build TypeScript Lambda functions
-          npm run build || node build-lambda.js
           
-          echo "✅ Lambda functions built"
-          ls -lh lambda-bundle/
+          # Build Lambda handlers
+          cd backend
+          
+          # Build TypeScript Lambda functions if build script exists
+          if grep -q '"build"' package.json; then
+            echo "Running backend build script..."
+            npm run build
+          fi
+          
+          # Check if lambda-bundle directory was created
+          if [ -d "lambda-bundle" ]; then
+            echo "✅ Lambda bundle created"
+            ls -lh lambda-bundle/
+          elif [ -d "dist" ]; then
+            echo "✅ Dist directory created"
+            ls -lh dist/
+          else
+            echo "⚠️  No lambda-bundle or dist found, Lambda code may be in src/"
+          fi
+          
+          cd ..
+          
+          echo "✅ Lambda build completed"
         fi
 
   build:
     commands:
       - echo "🚀 Build phase started on $(date)"
-      - cd cdk
+      - cd backend/cdk
 
       - |
         if [ "$ACTION" = "deploy" ]; then
+          echo "📦 Bootstrapping CDK (if needed)..."
+          cdk bootstrap aws://${AWS_ACCOUNT}/${AWS_REGION} || echo "Already bootstrapped"
+          
           echo "📦 Synthesizing CDK stack..."
-          cdk synth --context environment=${ENVIRONMENT} \
-                    --context bedrockAgentId=${BEDROCK_AGENT_ID} \
-                    --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
-                    --context region=${AWS_REGION}
+          cdk synth \
+            --context environment=${ENVIRONMENT} \
+            --context bedrockAgentId=${BEDROCK_AGENT_ID} \
+            --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
+            --context region=${AWS_REGION}
           
           echo "🚀 Deploying CDK stack..."
           cdk deploy --all \
-                     --require-approval never \
-                     --context environment=${ENVIRONMENT} \
-                     --context bedrockAgentId=${BEDROCK_AGENT_ID} \
-                     --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
-                     --context region=${AWS_REGION} \
-                     --outputs-file ../cdk-outputs.json
+            --require-approval never \
+            --context environment=${ENVIRONMENT} \
+            --context bedrockAgentId=${BEDROCK_AGENT_ID} \
+            --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
+            --context region=${AWS_REGION} \
+            --outputs-file ../../cdk-outputs.json
           
           echo "✅ CDK deployment completed"
           
           # Display outputs
-          if [ -f ../cdk-outputs.json ]; then
+          if [ -f ../../cdk-outputs.json ]; then
             echo "📋 CDK Outputs:"
-            cat ../cdk-outputs.json
+            cat ../../cdk-outputs.json
           fi
           
         elif [ "$ACTION" = "destroy" ]; then
           echo "🔥 Destroying CDK stack..."
           cdk destroy --all \
-                      --force \
-                      --context environment=${ENVIRONMENT} \
-                      --context bedrockAgentId=${BEDROCK_AGENT_ID} \
-                      --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
-                      --context region=${AWS_REGION}
+            --force \
+            --context environment=${ENVIRONMENT} \
+            --context bedrockAgentId=${BEDROCK_AGENT_ID} \
+            --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
+            --context region=${AWS_REGION}
           
           echo "✅ CDK destruction completed"
         fi
 
-      - cd ..
+      - cd ../..
 
   post_build:
     commands:
@@ -117,58 +141,108 @@ phases:
 
       - |
         if [ "$ACTION" = "deploy" ]; then
-          # Deploy frontend if it exists
-          if [ -d "frontend" ] || [ -d "dist" ]; then
-            echo "🌐 Deploying frontend..."
+          # Deploy frontend
+          echo "🌐 Deploying frontend..."
+          
+          # Get S3 bucket and CloudFront distribution from CDK outputs
+          if [ -f cdk-outputs.json ]; then
+            STACK_NAME="PltchatbotStack-${ENVIRONMENT}"
             
-            # Get S3 bucket name from CDK outputs
-            if [ -f cdk-outputs.json ]; then
-              FRONTEND_BUCKET=$(cat cdk-outputs.json | jq -r '.["PltchatbotStack-'"${ENVIRONMENT}"'"].FrontendBucketName // empty')
+            # Try to extract frontend bucket (without jq)
+            FRONTEND_BUCKET=$(cat cdk-outputs.json | grep -o '"FrontendBucketName"[^"]*"[^"]*"' | tail -1 | cut -d'"' -f4 || echo "")
+            
+            if [ -z "$FRONTEND_BUCKET" ]; then
+              # Try alternative output keys
+              FRONTEND_BUCKET=$(cat cdk-outputs.json | grep -o '"WebsiteBucket[^"]*"[^"]*"[^"]*"' | tail -1 | cut -d'"' -f4 || echo "")
+            fi
+            
+            if [ -n "$FRONTEND_BUCKET" ]; then
+              echo "Deploying to S3 bucket: $FRONTEND_BUCKET"
               
-              if [ -n "$FRONTEND_BUCKET" ]; then
-                echo "Uploading to S3 bucket: $FRONTEND_BUCKET"
-                
-                # Build frontend if build script exists
-                cd frontend 2>/dev/null || cd dist 2>/dev/null || exit 0
-                
-                if [ -f "package.json" ] && grep -q '"build"' package.json; then
-                  echo "Building frontend..."
-                  npm run build
-                  
-                  # Upload to S3
-                  if [ -d "build" ]; then
-                    aws s3 sync build/ s3://${FRONTEND_BUCKET}/ --delete
-                  elif [ -d "dist" ]; then
-                    aws s3 sync dist/ s3://${FRONTEND_BUCKET}/ --delete
-                  fi
-                  
-                  echo "✅ Frontend deployed"
+              cd frontend
+              
+              # Build Next.js frontend
+              echo "Building Next.js frontend..."
+              npm run build
+              
+              # Deploy to S3
+              if [ -d ".next" ]; then
+                # Next.js static export
+                if [ -d "out" ]; then
+                  echo "Deploying Next.js static export..."
+                  aws s3 sync out/ s3://${FRONTEND_BUCKET}/ --delete
                 else
-                  echo "⚠️  No build script found in frontend"
+                  echo "⚠️  Next.js build completed but no 'out' directory found"
+                  echo "Make sure next.config.js has 'output: export'"
                 fi
-                
-                cd ..
+              elif [ -d "build" ]; then
+                # React build output
+                aws s3 sync build/ s3://${FRONTEND_BUCKET}/ --delete
+              elif [ -d "dist" ]; then
+                # Vite/other build output
+                aws s3 sync dist/ s3://${FRONTEND_BUCKET}/ --delete
               else
-                echo "⚠️  Frontend bucket not found in outputs"
+                echo "⚠️  No build output directory found (out/build/dist)"
               fi
+              
+              # Invalidate CloudFront if distribution exists
+              CF_DISTRIBUTION=$(cat ../cdk-outputs.json | grep -o '"CloudFrontDistribution[^"]*"[^"]*"[^"]*"' | tail -1 | cut -d'"' -f4 || echo "")
+              if [ -n "$CF_DISTRIBUTION" ]; then
+                echo "Invalidating CloudFront cache..."
+                aws cloudfront create-invalidation \
+                  --distribution-id ${CF_DISTRIBUTION} \
+                  --paths "/*" || echo "CloudFront invalidation failed"
+              fi
+              
+              cd ..
+              
+              echo "✅ Frontend deployed"
+            else
+              echo "⚠️  Frontend bucket not found in CDK outputs"
+              echo "Available outputs:"
+              cat cdk-outputs.json
             fi
           else
-            echo "ℹ️  No frontend directory found, skipping frontend deployment"
+            echo "⚠️  No cdk-outputs.json found"
           fi
           
           echo ""
-          echo "🎉 Deployment completed successfully!"
-          echo "===================================="
+          echo "🎉 ============================================="
+          echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
+          echo "🎉 ============================================="
+          echo ""
           
-          # Display final outputs
+          # Display URLs in user-friendly format
           if [ -f cdk-outputs.json ]; then
+            echo "📋 Deployment URLs:"
+            echo "==================="
+            
+            # Extract outputs (works without jq)
+            WEBSOCKET_URL=$(cat cdk-outputs.json | grep -o '"WebSocketApiUrl"[^"]*"[^"]*"' | tail -1 | cut -d'"' -f4 || echo "Not available")
+            REST_API_URL=$(cat cdk-outputs.json | grep -o '"RestApiUrl"[^"]*"[^"]*"' | tail -1 | cut -d'"' -f4 || echo "Not available")
+            FRONTEND_URL=$(cat cdk-outputs.json | grep -o '"FrontendUrl"[^"]*"[^"]*"' | tail -1 | cut -d'"' -f4 || echo "Not available")
+            
+            if [ -z "$FRONTEND_URL" ] || [ "$FRONTEND_URL" = "Not available" ]; then
+              # Try CloudFront URL
+              FRONTEND_URL=$(cat cdk-outputs.json | grep -o '"CloudFrontUrl"[^"]*"[^"]*"' | tail -1 | cut -d'"' -f4 || echo "Not available")
+            fi
+            
+            echo "🖥️  Frontend:    $FRONTEND_URL"
+            echo "🔌 WebSocket:   $WEBSOCKET_URL"
+            echo "🔗 REST API:    $REST_API_URL"
             echo ""
-            echo "📋 Deployment Outputs:"
-            cat cdk-outputs.json | jq '.'
+            
+            echo "📋 Full CDK Outputs:"
+            cat cdk-outputs.json
+            echo ""
           fi
           
         elif [ "$ACTION" = "destroy" ]; then
-          echo "🎉 Destruction completed successfully!"
+          echo ""
+          echo "🎉 ============================================="
+          echo "🎉 DESTRUCTION COMPLETED SUCCESSFULLY!"
+          echo "🎉 ============================================="
+          echo ""
         fi
 
       - echo "Build completed on $(date)"
@@ -180,6 +254,6 @@ artifacts:
 
 cache:
   paths:
-    - "node_modules/**/*"
-    - "cdk/node_modules/**/*"
+    - "backend/node_modules/**/*"
+    - "backend/cdk/node_modules/**/*"
     - "frontend/node_modules/**/*"
