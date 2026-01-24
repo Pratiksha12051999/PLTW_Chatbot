@@ -1,0 +1,185 @@
+version: 0.2
+
+# PLTW Chatbot - CodeBuild Build Specification
+# This file defines how CodeBuild will build and deploy your application
+
+env:
+  variables:
+    NODE_VERSION: "20"
+  parameter-store:
+    # Add any secrets from Parameter Store here if needed
+    # GITHUB_TOKEN: /codebuild/github-token
+  exported-variables:
+    - AWS_REGION
+    - ENVIRONMENT
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+      python: 3.11
+    commands:
+      - echo "📦 Installing dependencies..."
+      - echo "Node version:" $(node --version)
+      - echo "NPM version:" $(npm --version)
+
+      # Install AWS CDK
+      - npm install -g aws-cdk
+      - echo "CDK version:" $(cdk --version)
+
+      # Install project dependencies
+      - echo "Installing backend dependencies..."
+      - npm install
+
+      # Install CDK dependencies
+      - echo "Installing CDK dependencies..."
+      - cd cdk
+      - npm install
+      - cd ..
+
+      # Install frontend dependencies
+      - echo "Installing frontend dependencies..."
+      - cd frontend || cd dist || echo "No frontend directory found"
+      - npm install || echo "No frontend package.json"
+      - cd ..
+
+  pre_build:
+    commands:
+      - echo "🔧 Pre-build phase started on $(date)"
+      - echo "ACTION=${ACTION}"
+      - echo "ENVIRONMENT=${ENVIRONMENT}"
+      - echo "AWS_REGION=${AWS_REGION}"
+
+      # Configure AWS credentials (already configured by CodeBuild)
+      - aws sts get-caller-identity
+
+      # Export environment variables for CDK
+      - export CDK_DEFAULT_ACCOUNT=${AWS_ACCOUNT}
+      - export CDK_DEFAULT_REGION=${AWS_REGION}
+
+      - |
+        if [ "$ACTION" = "deploy" ]; then
+          echo "🔨 Building Lambda functions..."
+          # Build TypeScript Lambda functions
+          npm run build || node build-lambda.js
+          
+          echo "✅ Lambda functions built"
+          ls -lh lambda-bundle/
+        fi
+
+  build:
+    commands:
+      - echo "🚀 Build phase started on $(date)"
+      - cd cdk
+
+      - |
+        if [ "$ACTION" = "deploy" ]; then
+          echo "📦 Synthesizing CDK stack..."
+          cdk synth --context environment=${ENVIRONMENT} \
+                    --context bedrockAgentId=${BEDROCK_AGENT_ID} \
+                    --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
+                    --context region=${AWS_REGION}
+          
+          echo "🚀 Deploying CDK stack..."
+          cdk deploy --all \
+                     --require-approval never \
+                     --context environment=${ENVIRONMENT} \
+                     --context bedrockAgentId=${BEDROCK_AGENT_ID} \
+                     --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
+                     --context region=${AWS_REGION} \
+                     --outputs-file ../cdk-outputs.json
+          
+          echo "✅ CDK deployment completed"
+          
+          # Display outputs
+          if [ -f ../cdk-outputs.json ]; then
+            echo "📋 CDK Outputs:"
+            cat ../cdk-outputs.json
+          fi
+          
+        elif [ "$ACTION" = "destroy" ]; then
+          echo "🔥 Destroying CDK stack..."
+          cdk destroy --all \
+                      --force \
+                      --context environment=${ENVIRONMENT} \
+                      --context bedrockAgentId=${BEDROCK_AGENT_ID} \
+                      --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
+                      --context region=${AWS_REGION}
+          
+          echo "✅ CDK destruction completed"
+        fi
+
+      - cd ..
+
+  post_build:
+    commands:
+      - echo "✨ Post-build phase started on $(date)"
+
+      - |
+        if [ "$ACTION" = "deploy" ]; then
+          # Deploy frontend if it exists
+          if [ -d "frontend" ] || [ -d "dist" ]; then
+            echo "🌐 Deploying frontend..."
+            
+            # Get S3 bucket name from CDK outputs
+            if [ -f cdk-outputs.json ]; then
+              FRONTEND_BUCKET=$(cat cdk-outputs.json | jq -r '.["PltchatbotStack-'"${ENVIRONMENT}"'"].FrontendBucketName // empty')
+              
+              if [ -n "$FRONTEND_BUCKET" ]; then
+                echo "Uploading to S3 bucket: $FRONTEND_BUCKET"
+                
+                # Build frontend if build script exists
+                cd frontend 2>/dev/null || cd dist 2>/dev/null || exit 0
+                
+                if [ -f "package.json" ] && grep -q '"build"' package.json; then
+                  echo "Building frontend..."
+                  npm run build
+                  
+                  # Upload to S3
+                  if [ -d "build" ]; then
+                    aws s3 sync build/ s3://${FRONTEND_BUCKET}/ --delete
+                  elif [ -d "dist" ]; then
+                    aws s3 sync dist/ s3://${FRONTEND_BUCKET}/ --delete
+                  fi
+                  
+                  echo "✅ Frontend deployed"
+                else
+                  echo "⚠️  No build script found in frontend"
+                fi
+                
+                cd ..
+              else
+                echo "⚠️  Frontend bucket not found in outputs"
+              fi
+            fi
+          else
+            echo "ℹ️  No frontend directory found, skipping frontend deployment"
+          fi
+          
+          echo ""
+          echo "🎉 Deployment completed successfully!"
+          echo "===================================="
+          
+          # Display final outputs
+          if [ -f cdk-outputs.json ]; then
+            echo ""
+            echo "📋 Deployment Outputs:"
+            cat cdk-outputs.json | jq '.'
+          fi
+          
+        elif [ "$ACTION" = "destroy" ]; then
+          echo "🎉 Destruction completed successfully!"
+        fi
+
+      - echo "Build completed on $(date)"
+
+artifacts:
+  files:
+    - "**/*"
+  name: pltw-chatbot-build-$(date +%Y%m%d-%H%M%S)
+
+cache:
+  paths:
+    - "node_modules/**/*"
+    - "cdk/node_modules/**/*"
+    - "frontend/node_modules/**/*"
