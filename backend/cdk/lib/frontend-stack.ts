@@ -2,7 +2,6 @@ import * as cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
-import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import { Construct } from "constructs";
 
 export class FrontendStack extends cdk.Stack {
@@ -17,11 +16,11 @@ export class FrontendStack extends cdk.Stack {
     this.frontendBucket = new s3.Bucket(this, "FrontendBucket", {
       bucketName: `pltw-chatbot-frontend-${this.account}`,
       websiteIndexDocument: "index.html",
-      websiteErrorDocument: "index.html", // For SPA routing
+      websiteErrorDocument: "index.html",
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      removalPolicy: cdk.RemovalPolicy.DESTROY, // Change to RETAIN for production
-      autoDeleteObjects: true, // Change to false for production
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // Changed to RETAIN for production
+      autoDeleteObjects: false, // Changed to false for production
       cors: [
         {
           allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.HEAD],
@@ -49,9 +48,12 @@ export class FrontendStack extends cdk.Stack {
       "FrontendDistribution",
       {
         defaultBehavior: {
-          origin: new origins.S3Origin(this.frontendBucket, {
-            originAccessIdentity,
-          }),
+          origin: origins.S3BucketOrigin.withOriginAccessIdentity(
+            this.frontendBucket,
+            {
+              originAccessIdentity,
+            },
+          ),
           viewerProtocolPolicy:
             cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
@@ -62,19 +64,19 @@ export class FrontendStack extends cdk.Stack {
         defaultRootObject: "index.html",
         errorResponses: [
           {
-            httpStatus: 404,
-            responseHttpStatus: 200,
-            responsePagePath: "/index.html",
-            ttl: cdk.Duration.minutes(5),
-          },
-          {
             httpStatus: 403,
             responseHttpStatus: 200,
             responsePagePath: "/index.html",
-            ttl: cdk.Duration.minutes(5),
+            ttl: cdk.Duration.seconds(10),
+          },
+          {
+            httpStatus: 404,
+            responseHttpStatus: 200,
+            responsePagePath: "/index.html",
+            ttl: cdk.Duration.seconds(10),
           },
         ],
-        priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // Use only North America and Europe
+        priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
         comment: "PLTW Chatbot Frontend Distribution",
       },
     );
