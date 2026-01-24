@@ -9,27 +9,17 @@ phases:
       - echo "📦 Installing dependencies..."
       - echo "Node version:" $(node --version)
       - echo "NPM version:" $(npm --version)
-      
-      # Install AWS CDK globally
       - npm install -g aws-cdk
       - echo "CDK version:" $(cdk --version)
-      
-      # Install jq for JSON parsing
       - yum install -y jq || apt-get install -y jq
-      
-      # Install backend dependencies
       - echo "Installing backend dependencies..."
       - cd backend
       - npm install
       - cd ..
-      
-      # Install CDK dependencies
       - echo "Installing CDK dependencies..."
       - cd backend/cdk
       - npm install
       - cd ../..
-      
-      # Install frontend dependencies
       - echo "Installing frontend dependencies..."
       - cd frontend
       - npm install
@@ -43,31 +33,21 @@ phases:
       - echo "AWS_REGION=${AWS_REGION}"
       - echo "BEDROCK_AGENT_ID=${BEDROCK_AGENT_ID:0:10}..."
       - echo "BEDROCK_AGENT_ALIAS_ID=${BEDROCK_AGENT_ALIAS_ID:0:10}..."
-      
-      # Verify AWS credentials
       - aws sts get-caller-identity
-      
-      # Set CDK environment variables
       - export CDK_DEFAULT_ACCOUNT=${AWS_ACCOUNT}
       - export CDK_DEFAULT_REGION=${AWS_REGION}
-      
-      # Build Lambda functions and create bundle
       - |
         if [ "$ACTION" = "deploy" ]; then
           echo "🔨 Building Lambda functions..."
-          
           cd backend
-          
           if grep -q '"build"' package.json; then
             echo "Running backend build script..."
             npm run build || echo "⚠️  Backend build had errors but continuing..."
           fi
-          
           echo ""
           echo "📦 Creating lambda-bundle directory..."
           rm -rf lambda-bundle
           mkdir -p lambda-bundle
-          
           echo "Copying compiled code from dist/ to lambda-bundle/..."
           if [ -d "dist" ]; then
             cp -r dist/* lambda-bundle/
@@ -76,34 +56,27 @@ phases:
             echo "❌ ERROR: dist/ directory not found!"
             exit 1
           fi
-          
           echo "Copying package files..."
           cp package.json lambda-bundle/
           if [ -f "package-lock.json" ]; then
             cp package-lock.json lambda-bundle/
           fi
-          
           echo "Installing production dependencies in lambda-bundle..."
           cd lambda-bundle
           npm install --production --omit=dev
           cd ..
-          
           echo "✅ Lambda bundle created successfully"
           cd ..
-          
           echo "✅ Lambda build phase completed"
-          
           echo ""
           echo "🔨 Compiling CDK TypeScript files..."
           cd backend/cdk
-          
           if [ -f "tsconfig.json" ]; then
             echo "Found tsconfig.json, compiling..."
             npx tsc || echo "⚠️  CDK compilation had warnings"
           else
             echo "⚠️  No tsconfig.json found in backend/cdk/"
           fi
-          
           cd ../..
           echo "✅ CDK compilation completed"
         fi
@@ -112,19 +85,16 @@ phases:
     commands:
       - echo "🚀 Build phase started on $(date)"
       - cd backend/cdk
-      
       - |
         if [ "$ACTION" = "deploy" ]; then
           echo "📦 Bootstrapping CDK (if needed)..."
           cdk bootstrap aws://${AWS_ACCOUNT}/${AWS_REGION} || echo "Already bootstrapped"
-          
           echo "📦 Synthesizing CDK stack..."
           cdk synth \
             --context environment=${ENVIRONMENT} \
             --context bedrockAgentId=${BEDROCK_AGENT_ID} \
             --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
             --context region=${AWS_REGION}
-          
           echo "🚀 Deploying CDK stack..."
           cdk deploy --all \
             --require-approval never \
@@ -133,9 +103,7 @@ phases:
             --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
             --context region=${AWS_REGION} \
             --outputs-file ../../cdk-outputs.json
-          
           echo "✅ CDK deployment completed"
-          
         elif [ "$ACTION" = "destroy" ]; then
           echo "🔥 Destroying CDK stack..."
           cdk destroy --all \
@@ -144,40 +112,30 @@ phases:
             --context bedrockAgentId=${BEDROCK_AGENT_ID} \
             --context bedrockAgentAliasId=${BEDROCK_AGENT_ALIAS_ID} \
             --context region=${AWS_REGION}
-          
           echo "✅ CDK destruction completed"
         fi
-      
       - cd ../..
-      
-      # Frontend Build and Deployment
       - |
         if [ "$ACTION" = "deploy" ]; then
           echo ""
           echo "🌐 ============================================="
           echo "🌐 STARTING FRONTEND DEPLOYMENT"
           echo "🌐 ============================================="
-          
-          # Check if CDK outputs file exists
           if [ ! -f "cdk-outputs.json" ]; then
             echo "❌ ERROR: cdk-outputs.json not found!"
             echo "CDK deployment may have failed. Skipping frontend deployment."
             exit 0
           fi
-          
           echo "📋 CDK Output file contents:"
           cat cdk-outputs.json
           echo ""
-          
-          # Extract values from CDK outputs
           echo "🔍 Extracting deployment values..."
-          WEBSOCKET_URL=$(cat cdk-outputs.json | jq -r '.WebSocketStack.WebSocketURL // .WebSocketStack.WebSocketApiUrl // empty' || echo "")
-          REST_API_URL=$(cat cdk-outputs.json | jq -r '.RestApiStack.RestApiUrl // .RestApiStack.PLTWRestApiEndpoint98DE8254 // empty' || echo "")
-          FRONTEND_BUCKET=$(cat cdk-outputs.json | jq -r '.FrontendStack.FrontendBucketName // empty' || echo "")
-          DISTRIBUTION_ID=$(cat cdk-outputs.json | jq -r '.FrontendStack.CloudFrontDistributionId // empty' || echo "")
-          USER_POOL_ID=$(cat cdk-outputs.json | jq -r '.CognitoStack.UserPoolId // empty' || echo "")
-          USER_POOL_CLIENT_ID=$(cat cdk-outputs.json | jq -r '.CognitoStack.UserPoolClientId // empty' || echo "")
-          
+          WEBSOCKET_URL=$(cat cdk-outputs.json | jq -r '.WebSocketStack.WebSocketURL // .WebSocketStack.WebSocketApiUrl // ""')
+          REST_API_URL=$(cat cdk-outputs.json | jq -r '.RestApiStack.RestApiUrl // .RestApiStack.PLTWRestApiEndpoint98DE8254 // ""')
+          FRONTEND_BUCKET=$(cat cdk-outputs.json | jq -r '.FrontendStack.FrontendBucketName // ""')
+          DISTRIBUTION_ID=$(cat cdk-outputs.json | jq -r '.FrontendStack.CloudFrontDistributionId // ""')
+          USER_POOL_ID=$(cat cdk-outputs.json | jq -r '.CognitoStack.UserPoolId // ""')
+          USER_POOL_CLIENT_ID=$(cat cdk-outputs.json | jq -r '.CognitoStack.UserPoolClientId // ""')
           echo "📊 Extracted Values:"
           echo "  WebSocket URL: ${WEBSOCKET_URL:-Not found}"
           echo "  REST API URL: ${REST_API_URL:-Not found}"
@@ -186,44 +144,30 @@ phases:
           echo "  User Pool ID: ${USER_POOL_ID:-Not found}"
           echo "  User Pool Client ID: ${USER_POOL_CLIENT_ID:-Not found}"
           echo ""
-          
-          # Check if we have the necessary values
           if [ -z "$FRONTEND_BUCKET" ]; then
             echo "⚠️  WARNING: Frontend bucket not found in CDK outputs"
             echo "Frontend will not be deployed. Check if FrontendStack was deployed successfully."
             exit 0
           fi
-          
-          # Navigate to frontend directory
           cd frontend
-          
-          # Create .env file with deployment values
           echo "📝 Creating .env file..."
-          cat > .env << EOF
-REACT_APP_ENVIRONMENT=${ENVIRONMENT}
-REACT_APP_REGION=${AWS_REGION}
-REACT_APP_WEBSOCKET_URL=${WEBSOCKET_URL}
-REACT_APP_API_URL=${REST_API_URL}
-REACT_APP_USER_POOL_ID=${USER_POOL_ID}
-REACT_APP_USER_POOL_CLIENT_ID=${USER_POOL_CLIENT_ID}
-REACT_APP_DEBUG=false
-REACT_APP_LOG_LEVEL=info
-EOF
-          
+          echo "REACT_APP_ENVIRONMENT=${ENVIRONMENT}" > .env
+          echo "REACT_APP_REGION=${AWS_REGION}" >> .env
+          echo "REACT_APP_WEBSOCKET_URL=${WEBSOCKET_URL}" >> .env
+          echo "REACT_APP_API_URL=${REST_API_URL}" >> .env
+          echo "REACT_APP_USER_POOL_ID=${USER_POOL_ID}" >> .env
+          echo "REACT_APP_USER_POOL_CLIENT_ID=${USER_POOL_CLIENT_ID}" >> .env
+          echo "REACT_APP_DEBUG=false" >> .env
+          echo "REACT_APP_LOG_LEVEL=info" >> .env
           echo "✅ Created .env file with configuration:"
           cat .env
           echo ""
-          
-          # Build frontend
           echo "🏗️  Building frontend application..."
           npm run build
-          
           if [ ! -d "out" ] && [ ! -d "build" ] && [ ! -d ".next" ]; then
             echo "❌ ERROR: Frontend build failed - no build output found"
             exit 1
           fi
-          
-          # Determine build output directory
           if [ -d "out" ]; then
             BUILD_DIR="out"
             echo "✅ Found Next.js static export in 'out' directory"
@@ -232,41 +176,33 @@ EOF
             echo "✅ Found React build in 'build' directory"
           elif [ -d ".next" ]; then
             BUILD_DIR=".next"
-            echo "⚠️  Found .next directory but no static export. Make sure next.config.js has 'output: export'"
+            echo "⚠️  Found .next directory but no static export"
           fi
-          
-          # Deploy to S3
           echo "☁️  Uploading frontend to S3: ${FRONTEND_BUCKET}"
           unset AWS_PROFILE
           export AWS_DEFAULT_REGION=${AWS_REGION}
           aws s3 sync ${BUILD_DIR}/ s3://${FRONTEND_BUCKET}/ --delete --no-cli-pager
-          
           if [ $? -eq 0 ]; then
             echo "✅ Frontend uploaded successfully to S3"
           else
             echo "❌ ERROR: S3 sync failed"
             exit 1
           fi
-          
-          # Invalidate CloudFront cache
           if [ -n "$DISTRIBUTION_ID" ]; then
             echo "🔄 Creating CloudFront invalidation..."
             aws cloudfront create-invalidation \
               --distribution-id "${DISTRIBUTION_ID}" \
               --paths "/*" \
               --no-cli-pager > /dev/null
-            
             if [ $? -eq 0 ]; then
               echo "✅ CloudFront cache invalidated"
             else
               echo "⚠️  WARNING: CloudFront invalidation failed"
             fi
           else
-            echo "⚠️  No CloudFront distribution ID found, skipping cache invalidation"
+            echo "⚠️  No CloudFront distribution ID found"
           fi
-          
           cd ..
-          
           echo ""
           echo "✅ ============================================="
           echo "✅ FRONTEND DEPLOYMENT COMPLETED!"
@@ -276,7 +212,6 @@ EOF
   post_build:
     commands:
       - echo "✨ Post-build phase started on $(date)"
-      
       - |
         if [ "$ACTION" = "deploy" ]; then
           echo ""
@@ -284,27 +219,22 @@ EOF
           echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
           echo "🎉 ============================================="
           echo ""
-          
-          # Extract and display all URLs
           if [ -f cdk-outputs.json ]; then
-            FRONTEND_URL=$(cat cdk-outputs.json | jq -r '.FrontendStack.FrontendUrl // empty' || echo "Not available")
-            WEBSOCKET_URL=$(cat cdk-outputs.json | jq -r '.WebSocketStack.WebSocketURL // .WebSocketStack.WebSocketApiUrl // empty' || echo "Not available")
-            REST_API_URL=$(cat cdk-outputs.json | jq -r '.RestApiStack.RestApiUrl // .RestApiStack.PLTWRestApiEndpoint98DE8254 // empty' || echo "Not available")
-            
+            FRONTEND_URL=$(cat cdk-outputs.json | jq -r '.FrontendStack.FrontendUrl // ""')
+            WEBSOCKET_URL=$(cat cdk-outputs.json | jq -r '.WebSocketStack.WebSocketURL // .WebSocketStack.WebSocketApiUrl // ""')
+            REST_API_URL=$(cat cdk-outputs.json | jq -r '.RestApiStack.RestApiUrl // .RestApiStack.PLTWRestApiEndpoint98DE8254 // ""')
             echo "📋 Deployment URLs:"
             echo "==================="
             echo "🖥️  Frontend:    ${FRONTEND_URL}"
             echo "🔌 WebSocket:   ${WEBSOCKET_URL}"
             echo "🔗 REST API:    ${REST_API_URL}"
             echo ""
-            
             echo "📋 Full CDK Outputs:"
             cat cdk-outputs.json | jq '.'
             echo ""
           else
             echo "⚠️  No cdk-outputs.json found"
           fi
-          
         elif [ "$ACTION" = "destroy" ]; then
           echo ""
           echo "🎉 ============================================="
@@ -312,15 +242,14 @@ EOF
           echo "🎉 ============================================="
           echo ""
         fi
-      
       - echo "Build completed on $(date)"
 
 artifacts:
   files:
-    - '**/*'
+    - "**/*"
 
 cache:
   paths:
-    - 'backend/node_modules/**/*'
-    - 'backend/cdk/node_modules/**/*'
-    - 'frontend/node_modules/**/*'
+    - "backend/node_modules/**/*"
+    - "backend/cdk/node_modules/**/*"
+    - "frontend/node_modules/**/*"
