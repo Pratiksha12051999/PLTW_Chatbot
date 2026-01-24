@@ -1,23 +1,24 @@
 #!/usr/bin/env node
-import 'source-map-support/register';
-import * as cdk from 'aws-cdk-lib';
-import { DynamoDBStack } from '../lib/dynamodb-stack';
-import { WebSocketStack } from '../lib/websocket-stack';
-import { RestApiStack } from '../lib/rest-api-stack';
-import { CognitoStack } from '../lib/cognito-stack';
-import { AmplifyStack } from '../lib/amplify-stack';
-import { SQSStack } from '../lib/sqs-stack';
+import "source-map-support/register";
+import * as cdk from "aws-cdk-lib";
+import { DynamoDBStack } from "../lib/dynamodb-stack";
+import { WebSocketStack } from "../lib/websocket-stack";
+import { RestApiStack } from "../lib/rest-api-stack";
+import { CognitoStack } from "../lib/cognito-stack";
+import { AmplifyStack } from "../lib/amplify-stack";
+import { SQSStack } from "../lib/sqs-stack";
+import { FrontendStack } from "../lib/frontend-stack";
 
 const app = new cdk.App();
 
 // Get context variables for Amplify (optional)
-const githubToken = app.node.tryGetContext('githubToken');
-const githubOwner = app.node.tryGetContext('githubOwner');
-const githubRepo = app.node.tryGetContext('githubRepo');
-const branches = app.node.tryGetContext('branches')?.split(',') || ['main'];
+const githubToken = app.node.tryGetContext("githubToken");
+const githubOwner = app.node.tryGetContext("githubOwner");
+const githubRepo = app.node.tryGetContext("githubRepo");
+const branches = app.node.tryGetContext("branches")?.split(",") || ["main"];
 
 // DynamoDB Stack
-const dynamoDBStack = new DynamoDBStack(app, 'PLTWChatbotDynamoDBStack', {
+const dynamoDBStack = new DynamoDBStack(app, "PLTWChatbotDynamoDBStack", {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
@@ -25,7 +26,7 @@ const dynamoDBStack = new DynamoDBStack(app, 'PLTWChatbotDynamoDBStack', {
 });
 
 // Cognito Stack
-const cognitoStack = new CognitoStack(app, 'CognitoStack', {
+const cognitoStack = new CognitoStack(app, "CognitoStack", {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
@@ -33,7 +34,7 @@ const cognitoStack = new CognitoStack(app, 'CognitoStack', {
 });
 
 // SQS Stack
-const sqsStack = new SQSStack(app, 'SQSStack', {
+const sqsStack = new SQSStack(app, "SQSStack", {
   conversationsTable: dynamoDBStack.conversationsTable,
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
@@ -42,7 +43,7 @@ const sqsStack = new SQSStack(app, 'SQSStack', {
 });
 
 // WebSocket Stack
-const webSocketStack = new WebSocketStack(app, 'WebSocketStack', {
+const webSocketStack = new WebSocketStack(app, "WebSocketStack", {
   conversationsTable: dynamoDBStack.conversationsTable,
   connectionsTable: dynamoDBStack.connectionsTable,
   escalationQueue: sqsStack.escalationQueue,
@@ -53,7 +54,7 @@ const webSocketStack = new WebSocketStack(app, 'WebSocketStack', {
 });
 
 // REST API Stack
-const restApiStack = new RestApiStack(app, 'RestApiStack', {
+const restApiStack = new RestApiStack(app, "RestApiStack", {
   conversationsTable: dynamoDBStack.conversationsTable,
   userPool: cognitoStack.userPool,
   env: {
@@ -62,6 +63,15 @@ const restApiStack = new RestApiStack(app, 'RestApiStack', {
   },
 });
 
+// Frontend Stack (S3 + CloudFront)
+const frontendStack = new FrontendStack(app, "FrontendStack", {
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION,
+  },
+});
+
+// Stack dependencies
 webSocketStack.addDependency(dynamoDBStack);
 restApiStack.addDependency(dynamoDBStack);
 restApiStack.addDependency(cognitoStack);
@@ -71,7 +81,7 @@ sqsStack.addDependency(dynamoDBStack);
 
 // Amplify Stack (only if GitHub credentials provided)
 if (githubToken && githubOwner && githubRepo) {
-  const amplifyStack = new AmplifyStack(app, 'AmplifyStack', {
+  const amplifyStack = new AmplifyStack(app, "AmplifyStack", {
     githubToken,
     githubOwner,
     githubRepo,
@@ -81,7 +91,7 @@ if (githubToken && githubOwner && githubRepo) {
       region: process.env.CDK_DEFAULT_REGION,
     },
   });
-  
+
   amplifyStack.addDependency(webSocketStack);
   amplifyStack.addDependency(restApiStack);
 }
