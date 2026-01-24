@@ -1,0 +1,10 @@
+# PLTW Chatbot Deployment Outputs
+# Environment: prod
+# Deployed: Fri Jan 23 21:07:07 MST 2026
+
+FRONTEND_URL=Not available
+WEBSOCKET_URL=Not available
+REST_API_URL=Not available
+CONVERSATIONS_TABLE=Not available
+AWS_ACCOUNT=216989103356
+AWS_REGION=us-east-1

@@ -2,23 +2,27 @@ export interface Message {
   messageId: string;
   conversationId: string;
   content: string;
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   timestamp: number;
   metadata?: {
     confidence?: number;
     sources?: string[];
+    // Escalation-related metadata
+    escalated?: boolean;
+    ticketId?: string;
+    queuePosition?: number;
   };
 }
 
 // Conversation category type for LLM-powered categorization
 export type ConversationCategory =
-  | 'Implementation'
-  | 'Rostering'
-  | 'Training'
-  | 'Payment'
-  | 'Grants'
-  | 'Others'
-  | 'general'; // Default for uncategorized
+  | "Implementation"
+  | "Rostering"
+  | "Training"
+  | "Payment"
+  | "Grants"
+  | "Others"
+  | "general"; // Default for uncategorized
 
 export interface Conversation {
   conversationId: string;
@@ -26,13 +30,19 @@ export interface Conversation {
   startTime: number;
   endTime?: number;
   lastActivityTime?: number;
-  status: 'active' | 'resolved' | 'escalated';
+  status: "active" | "resolved" | "escalated";
   category?: ConversationCategory;
   messages: Message[];
-  satisfaction?: 'positive' | 'negative';
-  sentiment?: 'positive' | 'negative' | 'neutral';
-  escalationReason?: 'no_answer' | 'user_not_satisfied' | 'requested_agent';
+  satisfaction?: "positive" | "negative";
+  sentiment?: "positive" | "negative" | "neutral";
+  escalationReason?: "no_answer" | "user_not_satisfied" | "requested_agent";
   comment?: string;
+  // Escalation info
+  escalationInfo?: {
+    ticketId: string;
+    queuePosition: number;
+    escalatedAt: number;
+  };
 }
 
 export interface Connection {
@@ -61,16 +71,22 @@ export interface WebSocketMessage {
   message?: string;
   conversationId?: string;
   category?: string;
-  language?: 'en' | 'es';
+  language?: "en" | "es";
 }
 
 export interface WebSocketResponse {
-  type: 'message_received' | 'assistant_response' | 'error' | 'escalated';
+  type: "message_received" | "assistant_response" | "error" | "escalated";
   message?: Message | string;
   shouldEscalate?: boolean;
   contactInfo?: {
     phone: string;
     email: string;
+  };
+  // Queue info for escalated conversations
+  queueInfo?: {
+    ticketId: string;
+    position: number;
+    estimatedWait: number;
   };
 }
 
@@ -78,7 +94,7 @@ export interface WebSocketResponse {
 export interface WebSocketConnectEvent {
   requestContext: {
     connectionId: string;
-    eventType: 'CONNECT';
+    eventType: "CONNECT";
     routeKey: string;
     domainName: string;
     stage: string;
@@ -97,7 +113,7 @@ export interface WebSocketConnectEvent {
 export interface WebSocketDisconnectEvent {
   requestContext: {
     connectionId: string;
-    eventType: 'DISCONNECT';
+    eventType: "DISCONNECT";
     routeKey: string;
     domainName: string;
     stage: string;
@@ -112,7 +128,7 @@ export interface WebSocketDisconnectEvent {
 export interface WebSocketMessageEvent {
   requestContext: {
     connectionId: string;
-    eventType: 'MESSAGE';
+    eventType: "MESSAGE";
     routeKey: string;
     domainName: string;
     stage: string;
