@@ -1,15 +1,5 @@
 version: 0.2
 
-# PLTW Chatbot - CodeBuild Build Specification
-# Fixed: Compiles CDK TypeScript before deployment
-
-env:
-  variables:
-    NODE_VERSION: "20"
-  exported-variables:
-    - AWS_REGION
-    - ENVIRONMENT
-
 phases:
   install:
     runtime-versions:
@@ -20,11 +10,11 @@ phases:
       - echo "Node version:" $(node --version)
       - echo "NPM version:" $(npm --version)
 
-      # Install AWS CDK
+      # Install AWS CDK globally
       - npm install -g aws-cdk
       - echo "CDK version:" $(cdk --version)
 
-      # Install backend dependencies (includes Lambda handlers)
+      # Install backend dependencies
       - echo "Installing backend dependencies..."
       - cd backend
       - npm install
@@ -51,18 +41,19 @@ phases:
       - echo "BEDROCK_AGENT_ID=${BEDROCK_AGENT_ID:0:10}..."
       - echo "BEDROCK_AGENT_ALIAS_ID=${BEDROCK_AGENT_ALIAS_ID:0:10}..."
 
-      # Configure AWS credentials
+      # Verify AWS credentials
       - aws sts get-caller-identity
 
-      # Export environment variables for CDK
+      # Set CDK environment variables
       - export CDK_DEFAULT_ACCOUNT=${AWS_ACCOUNT}
       - export CDK_DEFAULT_REGION=${AWS_REGION}
 
+      # Build Lambda functions and create bundle
       - |
         if [ "$ACTION" = "deploy" ]; then
           echo "🔨 Building Lambda functions..."
           
-          # Build Lambda handlers (may have errors but continue)
+          # Build Lambda handlers (compile TypeScript)
           cd backend
           
           if grep -q '"build"' package.json; then
@@ -70,11 +61,55 @@ phases:
             npm run build || echo "⚠️  Backend build had errors but continuing..."
           fi
           
+          # ============================================
+          # 🆕 CREATE LAMBDA BUNDLE FOR CODEBUILD
+          # ============================================
+          echo ""
+          echo "📦 Creating lambda-bundle directory..."
+          
+          # Remove old bundle if exists
+          rm -rf lambda-bundle
+          mkdir -p lambda-bundle
+          
+          # Copy ALL compiled JavaScript files from dist
+          echo "Copying compiled code from dist/ to lambda-bundle/..."
+          if [ -d "dist" ]; then
+            cp -r dist/* lambda-bundle/
+            echo "✅ Copied dist contents to lambda-bundle/"
+          else
+            echo "❌ ERROR: dist/ directory not found! TypeScript compilation may have failed."
+            exit 1
+          fi
+          
+          # Copy package files for dependencies
+          echo "Copying package files..."
+          cp package.json lambda-bundle/
+          if [ -f "package-lock.json" ]; then
+            cp package-lock.json lambda-bundle/
+          fi
+          
+          # Install production dependencies only
+          echo "Installing production dependencies in lambda-bundle..."
+          cd lambda-bundle
+          npm install --production --omit=dev
+          cd ..
+          
+          echo "✅ Lambda bundle created successfully"
+          echo ""
+          echo "📋 Lambda bundle contents:"
+          ls -la lambda-bundle/
+          echo ""
+          echo "📋 Lambda bundle handlers:"
+          ls -la lambda-bundle/handlers/ 2>/dev/null || echo "No handlers directory"
+          echo ""
+          
           cd ..
           
           echo "✅ Lambda build phase completed"
           
-          # CRITICAL: Compile CDK TypeScript files
+          # ============================================
+          # COMPILE CDK TYPESCRIPT FILES
+          # ============================================
           echo ""
           echo "🔨 Compiling CDK TypeScript files..."
           cd backend/cdk
@@ -262,7 +297,6 @@ phases:
 artifacts:
   files:
     - "**/*"
-  name: pltw-chatbot-build-$(date +%Y%m%d-%H%M%S)
 
 cache:
   paths:
