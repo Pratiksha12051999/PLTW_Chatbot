@@ -42,7 +42,7 @@ export class FrontendStack extends cdk.Stack {
     // Grant CloudFront access to S3 bucket
     this.frontendBucket.grantRead(originAccessIdentity);
 
-    // CloudFront Function to handle URL rewrites
+    // CloudFront Function for Next.js static export routing
     const urlRewriteFunction = new cloudfront.Function(
       this,
       "UrlRewriteFunction",
@@ -52,21 +52,27 @@ function handler(event) {
   var request = event.request;
   var uri = request.uri;
   
-  // If URI doesn't have a file extension and doesn't end with /
-  if (!uri.includes('.') && !uri.endsWith('/')) {
-    // Try adding .html extension for Next.js static exports
-    request.uri = uri + '.html';
+  // If URI is root, serve index.html
+  if (uri === '/' || uri === '') {
+    request.uri = '/index.html';
+    return request;
   }
   
-  // If URI ends with /, add index.html
+  // If URI ends with /, append index.html
   if (uri.endsWith('/')) {
     request.uri = uri + 'index.html';
+    return request;
+  }
+  
+  // If URI has no extension, try to serve it as a directory with index.html
+  if (!uri.includes('.')) {
+    request.uri = uri + '/index.html';
   }
   
   return request;
 }
       `),
-        comment: "Rewrite URLs for Next.js static export",
+        comment: "URL rewrite function for Next.js static export",
       },
     );
 
@@ -96,17 +102,13 @@ function handler(event) {
           ],
         },
         defaultRootObject: "index.html",
+        // REMOVED aggressive error responses that redirect everything to /index.html
+        // Only handle true 404s for missing files
         errorResponses: [
           {
             httpStatus: 403,
-            responseHttpStatus: 200,
-            responsePagePath: "/index.html",
-            ttl: cdk.Duration.seconds(10),
-          },
-          {
-            httpStatus: 404,
-            responseHttpStatus: 200,
-            responsePagePath: "/index.html",
+            responseHttpStatus: 404,
+            responsePagePath: "/404.html",
             ttl: cdk.Duration.seconds(10),
           },
         ],
