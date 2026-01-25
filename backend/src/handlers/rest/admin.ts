@@ -1,15 +1,20 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { DynamoDBService } from '../../services/dynamodb.service.js';
-import { AdminMetrics, Conversation } from '../../types/index.js';
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+import { DynamoDBService } from "../../services/dynamodb.service.js";
+import { AdminMetrics, Conversation } from "../../types/index.js";
 
 const dynamoDBService = new DynamoDBService();
 
-// Standard CORS headers
+// CloudFront domain - update this to your actual CloudFront URL
+const FRONTEND_URL = process.env.FRONTEND_URL || "";
+
+// Proper CORS headers for CloudFront origin
 const corsHeaders = {
-  'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": FRONTEND_URL,
+  "Access-Control-Allow-Headers":
+    "Content-Type,Authorization,X-Requested-With,X-Api-Key",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Credentials": "true",
 };
 
 /**
@@ -17,73 +22,99 @@ const corsHeaders = {
  * Handles: GET /admin/metrics, GET /admin/conversations
  */
 export const handler = async (
-  event: APIGatewayProxyEvent
+  event: APIGatewayProxyEvent,
 ): Promise<APIGatewayProxyResult> => {
   const path = event.path;
   const method = event.httpMethod;
 
   console.log(`Admin handler: ${method} ${path}`);
+  console.log(
+    `Origin: ${event.headers.origin || event.headers.Origin || "none"}`,
+  );
+
+  // Handle OPTIONS preflight request
+  if (method === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers: corsHeaders,
+      body: "",
+    };
+  }
 
   try {
     // Route based on path
-    if (path.endsWith('/metrics') && method === 'GET') {
+    if (path.endsWith("/metrics") && method === "GET") {
       return await getMetrics(event);
-    } else if (path.endsWith('/conversations') && method === 'GET') {
+    } else if (path.endsWith("/conversations") && method === "GET") {
       return await getConversations(event);
     } else {
       return {
         statusCode: 404,
         headers: corsHeaders,
-        body: JSON.stringify({ error: 'Not found' }),
+        body: JSON.stringify({ error: "Not found" }),
       };
     }
   } catch (error) {
-    console.error('Admin handler error:', error);
+    console.error("Admin handler error:", error);
     return {
       statusCode: 500,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Internal server error' }),
+      body: JSON.stringify({ error: "Internal server error" }),
     };
   }
 };
 
 export const getMetrics = async (
-  event: APIGatewayProxyEvent
+  event: APIGatewayProxyEvent,
 ): Promise<APIGatewayProxyResult> => {
   try {
-    const days = parseInt(event.queryStringParameters?.days || '7');
+    const days = parseInt(event.queryStringParameters?.days || "7");
     const endTime = Date.now();
     const startTime = endTime - days * 24 * 60 * 60 * 1000;
 
+    console.log(`Fetching metrics for last ${days} days`);
+
     const conversations = await dynamoDBService.getConversationsByDateRange(
       startTime,
-      endTime
+      endTime,
     );
+
+    console.log(`Found ${conversations.length} conversations`);
 
     // Calculate satisfaction based on explicit feedback OR sentiment analysis
     const conversationsWithSentiment = conversations.filter(
-      (c) => c.satisfaction || c.sentiment
+      (c) => c.satisfaction || c.sentiment,
     );
     const positiveCount = conversations.filter(
-      (c) => c.satisfaction === 'positive' || (!c.satisfaction && c.sentiment === 'positive')
+      (c) =>
+        c.satisfaction === "positive" ||
+        (!c.satisfaction && c.sentiment === "positive"),
     ).length;
     const negativeCount = conversations.filter(
-      (c) => c.satisfaction === 'negative' || (!c.satisfaction && c.sentiment === 'negative')
+      (c) =>
+        c.satisfaction === "negative" ||
+        (!c.satisfaction && c.sentiment === "negative"),
     ).length;
     const neutralCount = conversations.filter(
-      (c) => !c.satisfaction && c.sentiment === 'neutral'
+      (c) => !c.satisfaction && c.sentiment === "neutral",
     ).length;
-    
-    const escalatedCount = conversations.filter((c) => c.status === 'escalated').length;
+
+    const escalatedCount = conversations.filter(
+      (c) => c.status === "escalated",
+    ).length;
 
     // Overall satisfaction: positive / (positive + negative) * 100
     // Neutral doesn't count against satisfaction
     const totalRated = positiveCount + negativeCount;
-    const overallSatisfaction = totalRated > 0 ? (positiveCount / totalRated) * 100 : 0;
+    const overallSatisfaction =
+      totalRated > 0 ? (positiveCount / totalRated) * 100 : 0;
 
     const metrics: AdminMetrics = {
       totalConversations: conversations.length,
-      escalationRate: conversations.length > 0 ? (escalatedCount / conversations.length) * 100 : 0,
+      escalationRate:
+        conversations.length > 0
+          ? (escalatedCount / conversations.length) * 100
+          : 0,
       overallSatisfaction,
       conversationVolume: calculateDailyVolume(conversations, days),
       topCategories: calculateTopCategories(conversations),
@@ -92,43 +123,42 @@ export const getMetrics = async (
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
+      headers: corsHeaders,
       body: JSON.stringify(metrics),
     };
   } catch (error) {
-    console.error('Error fetching metrics:', error);
+    console.error("Error fetching metrics:", error);
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'Failed to fetch metrics' }),
+      headers: corsHeaders,
+      body: JSON.stringify({ error: "Failed to fetch metrics" }),
     };
   }
 };
 
 export const getConversations = async (
-  event: APIGatewayProxyEvent
+  event: APIGatewayProxyEvent,
 ): Promise<APIGatewayProxyResult> => {
   try {
-    const limit = parseInt(event.queryStringParameters?.limit || '50');
+    const limit = parseInt(event.queryStringParameters?.limit || "50");
+
+    console.log(`Fetching up to ${limit} conversations`);
+
     const conversations = await dynamoDBService.getAllConversations(limit);
+
+    console.log(`Returning ${conversations.length} conversations`);
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
+      headers: corsHeaders,
       body: JSON.stringify({ conversations }),
     };
   } catch (error) {
-    console.error('Error fetching conversations:', error);
+    console.error("Error fetching conversations:", error);
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'Failed to fetch conversations' }),
+      headers: corsHeaders,
+      body: JSON.stringify({ error: "Failed to fetch conversations" }),
     };
   }
 };
@@ -136,7 +166,7 @@ export const getConversations = async (
 function calculateDailyVolume(conversations: Conversation[], days: number) {
   const volumeMap = new Map<string, number>();
   conversations.forEach((conv) => {
-    const date = new Date(conv.startTime).toISOString().split('T')[0];
+    const date = new Date(conv.startTime).toISOString().split("T")[0];
     volumeMap.set(date, (volumeMap.get(date) || 0) + 1);
   });
   return Array.from(volumeMap.entries())
@@ -147,7 +177,7 @@ function calculateDailyVolume(conversations: Conversation[], days: number) {
 function calculateTopCategories(conversations: Conversation[]) {
   const categoryMap = new Map<string, number>();
   conversations.forEach((conv) => {
-    const category = conv.category || 'uncategorized';
+    const category = conv.category || "uncategorized";
     categoryMap.set(category, (categoryMap.get(category) || 0) + 1);
   });
   return Array.from(categoryMap.entries())
@@ -164,7 +194,7 @@ function calculateEscalationReasons(conversations: Conversation[]) {
   };
 
   conversations
-    .filter((c) => c.status === 'escalated')
+    .filter((c) => c.status === "escalated")
     .forEach((conv) => {
       if (conv.escalationReason) {
         const reason = conv.escalationReason as keyof typeof reasons;

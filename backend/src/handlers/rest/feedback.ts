@@ -1,103 +1,83 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { DynamoDBService } from '../../services/dynamodb.service.js';
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+import { DynamoDBService } from "../../services/dynamodb.service.js";
 
 const dynamoDBService = new DynamoDBService();
 
-// Standard CORS headers
+// CloudFront domain
+const FRONTEND_URL = process.env.FRONTEND_URL || "";
+
+// Proper CORS headers
 const corsHeaders = {
-  'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": FRONTEND_URL,
+  "Access-Control-Allow-Headers":
+    "Content-Type,Authorization,X-Requested-With,X-Api-Key",
+  "Access-Control-Allow-Methods": "POST,OPTIONS",
+  "Access-Control-Allow-Credentials": "true",
 };
 
-/**
- * Unified Feedback Handler
- * Handles: POST /feedback
- * 
- * User feedback (thumbs up/down) is stored directly as satisfaction.
- * This explicit feedback takes precedence over LLM sentiment analysis.
- */
 export const handler = async (
-  event: APIGatewayProxyEvent
+  event: APIGatewayProxyEvent,
 ): Promise<APIGatewayProxyResult> => {
-  const method = event.httpMethod;
+  console.log(`Feedback handler: ${event.httpMethod} ${event.path}`);
 
-  console.log(`Feedback handler: ${method} ${event.path}`);
-
-  if (method === 'POST') {
-    return await submitFeedback(event);
+  // Handle OPTIONS preflight
+  if (event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers: corsHeaders,
+      body: "",
+    };
   }
 
-  return {
-    statusCode: 404,
-    headers: corsHeaders,
-    body: JSON.stringify({ error: 'Not found' }),
-  };
-};
+  if (event.httpMethod !== "POST") {
+    return {
+      statusCode: 405,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: "Method not allowed" }),
+    };
+  }
 
-export const submitFeedback = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
   try {
-    const body = JSON.parse(event.body || '{}');
-    const { conversationId, satisfaction, comment } = body;
+    const body = JSON.parse(event.body || "{}");
+    const { conversationId, satisfaction } = body;
 
     if (!conversationId || !satisfaction) {
       return {
         statusCode: 400,
         headers: corsHeaders,
-        body: JSON.stringify({ error: 'Missing required fields' }),
+        body: JSON.stringify({ error: "Missing required fields" }),
       };
     }
 
-    // Validate satisfaction value
-    if (!['positive', 'negative'].includes(satisfaction)) {
+    if (!["positive", "negative"].includes(satisfaction)) {
       return {
         statusCode: 400,
         headers: corsHeaders,
-        body: JSON.stringify({ error: 'Invalid satisfaction value. Must be "positive" or "negative"' }),
+        body: JSON.stringify({ error: "Invalid satisfaction value" }),
       };
     }
 
-    console.log('[Feedback] Submitting user feedback', {
-      conversationId,
+    console.log(
+      `Recording ${satisfaction} feedback for conversation ${conversationId}`,
+    );
+
+    await dynamoDBService.updateConversation(conversationId, {
       satisfaction,
-      hasComment: !!comment,
-    });
-
-    // Store user's explicit feedback
-    // satisfaction = thumbs up (positive) or thumbs down (negative)
-    // sentiment is also set to match the explicit feedback
-    const updates: Record<string, any> = {
-      satisfaction,
-      sentiment: satisfaction, // Explicit feedback sets sentiment directly
-      lastActivityTime: Date.now(),
-    };
-
-    // Add comment if provided
-    if (comment) {
-      updates.comment = comment;
-    }
-
-    await dynamoDBService.updateConversation(conversationId, updates);
-
-    console.log('[Feedback] Feedback saved successfully', {
-      conversationId,
-      satisfaction,
+      updatedAt: Date.now(),
     });
 
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify({ message: 'Feedback submitted successfully' }),
+      body: JSON.stringify({ success: true }),
     };
   } catch (error) {
-    console.error('[Feedback] Error submitting feedback:', error);
+    console.error("Error recording feedback:", error);
     return {
       statusCode: 500,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Failed to submit feedback' }),
+      body: JSON.stringify({ error: "Failed to record feedback" }),
     };
   }
 };
