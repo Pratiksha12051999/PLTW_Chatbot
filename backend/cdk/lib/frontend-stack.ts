@@ -19,8 +19,8 @@ export class FrontendStack extends cdk.Stack {
       websiteErrorDocument: "index.html",
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      removalPolicy: cdk.RemovalPolicy.RETAIN, // Changed to RETAIN for production
-      autoDeleteObjects: false, // Changed to false for production
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      autoDeleteObjects: false,
       cors: [
         {
           allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.HEAD],
@@ -42,6 +42,34 @@ export class FrontendStack extends cdk.Stack {
     // Grant CloudFront access to S3 bucket
     this.frontendBucket.grantRead(originAccessIdentity);
 
+    // CloudFront Function to handle URL rewrites
+    const urlRewriteFunction = new cloudfront.Function(
+      this,
+      "UrlRewriteFunction",
+      {
+        code: cloudfront.FunctionCode.fromInline(`
+function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+  
+  // If URI doesn't have a file extension and doesn't end with /
+  if (!uri.includes('.') && !uri.endsWith('/')) {
+    // Try adding .html extension for Next.js static exports
+    request.uri = uri + '.html';
+  }
+  
+  // If URI ends with /, add index.html
+  if (uri.endsWith('/')) {
+    request.uri = uri + 'index.html';
+  }
+  
+  return request;
+}
+      `),
+        comment: "Rewrite URLs for Next.js static export",
+      },
+    );
+
     // CloudFront Distribution
     this.distribution = new cloudfront.Distribution(
       this,
@@ -60,6 +88,12 @@ export class FrontendStack extends cdk.Stack {
           cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
           compress: true,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          functionAssociations: [
+            {
+              function: urlRewriteFunction,
+              eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+            },
+          ],
         },
         defaultRootObject: "index.html",
         errorResponses: [
