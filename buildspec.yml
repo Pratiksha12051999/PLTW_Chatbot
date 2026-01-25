@@ -49,112 +49,69 @@ phases:
         if [ "$ACTION" = "deploy" ] && [ -f "cdk-outputs.json" ]; then
           echo "📋 CDK Outputs:"
           cat cdk-outputs.json
-          
           echo ""
-          echo "🔍 Extracting deployment values..."
           WS_URL=$(jq -r '.WebSocketStack.WebSocketURL' cdk-outputs.json 2>/dev/null || jq -r '.WebSocketStack.WebSocketApiUrl' cdk-outputs.json 2>/dev/null || echo "")
           API_URL=$(jq -r '.RestApiStack.RestApiUrl' cdk-outputs.json 2>/dev/null || jq -r '.RestApiStack.PLTWRestApiEndpoint98DE8254' cdk-outputs.json 2>/dev/null || echo "")
           BUCKET=$(jq -r '.FrontendStack.FrontendBucketName' cdk-outputs.json 2>/dev/null || echo "")
           DIST_ID=$(jq -r '.FrontendStack.CloudFrontDistributionId' cdk-outputs.json 2>/dev/null || echo "")
           POOL_ID=$(jq -r '.CognitoStack.UserPoolId' cdk-outputs.json 2>/dev/null || echo "")
           CLIENT_ID=$(jq -r '.CognitoStack.UserPoolClientId' cdk-outputs.json 2>/dev/null || echo "")
-          
           echo "WebSocket: ${WS_URL}"
           echo "REST API: ${API_URL}"
-          echo "Frontend Bucket: ${BUCKET}"
           echo "Cognito Pool: ${POOL_ID}"
-          echo "Cognito Client: ${CLIENT_ID}"
-          
           if [ -n "$BUCKET" ]; then
-            echo ""
-            echo "📝 Appending frontend config to root .env..."
-            
-            # Remove any old frontend vars from root .env if they exist
+            echo "📝 Updating root .env with frontend config..."
             if [ -f ".env" ]; then
-              echo "📋 Current root .env (before update):"
+              echo "Current .env before update:"
               cat .env
-              
-              # Remove old NEXT_PUBLIC_ lines if any
               sed -i '/^NEXT_PUBLIC_/d' .env
             else
               touch .env
             fi
-            
-            # Append frontend variables to root .env
-            cat >> .env << EOF
-
-# ========================================
-# Frontend Configuration (Auto-generated)
-# ========================================
-NEXT_PUBLIC_ENVIRONMENT=${ENVIRONMENT}
-NEXT_PUBLIC_REGION=${AWS_REGION}
-NEXT_PUBLIC_WEBSOCKET_URL=${WS_URL}
-NEXT_PUBLIC_API_URL=${API_URL}
-NEXT_PUBLIC_REST_API_URL=${API_URL}
-NEXT_PUBLIC_USER_POOL_ID=${POOL_ID}
-NEXT_PUBLIC_USER_POOL_CLIENT_ID=${CLIENT_ID}
-NEXT_PUBLIC_DEBUG=false
-NEXT_PUBLIC_LOG_LEVEL=info
-EOF
-            
+            echo "" >> .env
+            echo "# Frontend Configuration (Auto-generated)" >> .env
+            echo "NEXT_PUBLIC_ENVIRONMENT=${ENVIRONMENT}" >> .env
+            echo "NEXT_PUBLIC_REGION=${AWS_REGION}" >> .env
+            echo "NEXT_PUBLIC_WEBSOCKET_URL=${WS_URL}" >> .env
+            echo "NEXT_PUBLIC_API_URL=${API_URL}" >> .env
+            echo "NEXT_PUBLIC_REST_API_URL=${API_URL}" >> .env
+            echo "NEXT_PUBLIC_USER_POOL_ID=${POOL_ID}" >> .env
+            echo "NEXT_PUBLIC_USER_POOL_CLIENT_ID=${CLIENT_ID}" >> .env
+            echo "NEXT_PUBLIC_DEBUG=false" >> .env
             echo ""
             echo "✅ Updated root .env:"
             cat .env
-            
             echo ""
-            echo "📋 Copying root .env to frontend/.env..."
+            echo "📋 Copying to frontend/.env..."
             cp .env frontend/.env
-            
-            echo "✅ Frontend .env created:"
+            echo "✅ Frontend .env:"
             cat frontend/.env
-            
             echo ""
-            echo "🧹 Cleaning old frontend build artifacts..."
+            echo "🧹 Cleaning build artifacts..."
             rm -rf frontend/.next
             rm -rf frontend/out
             rm -rf frontend/build
-            
             cd frontend
-            
-            echo ""
-            echo "🏗️  Building frontend with environment variables..."
+            echo "🏗️  Building frontend..."
             npm run build
-            
             BUILD_DIR=""
             if [ -d "out" ]; then
               BUILD_DIR="out"
-              echo "✅ Found Next.js static export in 'out/' directory"
             elif [ -d "build" ]; then
               BUILD_DIR="build"
-              echo "✅ Found build in 'build/' directory"
             fi
-            
             if [ -z "$BUILD_DIR" ]; then
-              echo "❌ No build output found!"
+              echo "❌ No build output"
               exit 1
             fi
-            
-            echo ""
-            echo "☁️  Uploading ${BUILD_DIR}/ to S3: ${BUCKET}"
+            echo "☁️  Uploading to S3..."
             aws s3 sync ${BUILD_DIR}/ s3://${BUCKET}/ --delete
-            
-            if [ $? -eq 0 ]; then
-              echo "✅ Frontend uploaded successfully to S3"
-            else
-              echo "❌ S3 sync failed"
-              exit 1
-            fi
-            
             if [ -n "$DIST_ID" ]; then
-              echo ""
-              echo "🔄 Invalidating CloudFront cache..."
+              echo "🔄 Invalidating CloudFront..."
               aws cloudfront create-invalidation --distribution-id "${DIST_ID}" --paths "/*"
-              echo "✅ CloudFront invalidation created"
             fi
-            
             cd ..
-            echo ""
-            echo "✅ Frontend deployment completed!"
+            echo "✅ Frontend deployed"
           fi
         fi
 
@@ -162,33 +119,22 @@ EOF
     commands:
       - |
         if [ "$ACTION" = "deploy" ] && [ -f "cdk-outputs.json" ]; then
-          echo ""
-          echo "🎉 ============================================="
-          echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
-          echo "🎉 ============================================="
-          echo ""
-          
+          echo "🎉 DEPLOYMENT COMPLETE"
           FRONTEND_URL=$(jq -r '.FrontendStack.FrontendUrl' cdk-outputs.json 2>/dev/null || echo "")
           WEBSOCKET_URL=$(jq -r '.WebSocketStack.WebSocketURL' cdk-outputs.json 2>/dev/null || echo "")
           REST_API_URL=$(jq -r '.RestApiStack.RestApiUrl' cdk-outputs.json 2>/dev/null || echo "")
-          
-          echo "📋 Deployment URLs:"
-          echo "==================="
-          echo "🖥️  Frontend:    ${FRONTEND_URL}"
-          echo "🔌 WebSocket:   ${WEBSOCKET_URL}"
-          echo "🔗 REST API:    ${REST_API_URL}"
-          echo ""
-          
-          echo "📋 Full CDK Outputs:"
+          echo "🖥️  Frontend: ${FRONTEND_URL}"
+          echo "🔌 WebSocket: ${WEBSOCKET_URL}"
+          echo "🔗 REST API: ${REST_API_URL}"
           jq '.' cdk-outputs.json
         fi
 
 artifacts:
   files:
-    - '**/*'
+    - "**/*"
 
 cache:
   paths:
-    - 'backend/node_modules/**/*'
-    - 'backend/cdk/node_modules/**/*'
-    - 'frontend/node_modules/**/*'
+    - "backend/node_modules/**/*"
+    - "backend/cdk/node_modules/**/*"
+    - "frontend/node_modules/**/*"
