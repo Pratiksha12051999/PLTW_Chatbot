@@ -25,7 +25,7 @@ export class RestApiStack extends cdk.Stack {
     // 1. Admin Handler - handles /admin/metrics and /admin/conversations
     const adminHandler = new lambda.Function(this, "AdminHandler", {
       runtime: lambda.Runtime.NODEJS_20_X,
-      handler: "handlers/admin.handler", // ← FIXED: Added 'handlers/' prefix
+      handler: "handlers/rest/admin.handler", // ← FIXED: Correct path with rest/ subfolder
       code: lambda.Code.fromAsset(path.join(__dirname, "../../lambda-bundle")),
       timeout: cdk.Duration.seconds(30),
       environment: {
@@ -37,7 +37,7 @@ export class RestApiStack extends cdk.Stack {
     // 2. Feedback Handler - handles /feedback
     const feedbackHandler = new lambda.Function(this, "FeedbackHandler", {
       runtime: lambda.Runtime.NODEJS_20_X,
-      handler: "handlers/feedback.handler", // ← FIXED: Added 'handlers/' prefix
+      handler: "handlers/rest/feedback.handler", // ← FIXED: Correct path with rest/ subfolder
       code: lambda.Code.fromAsset(path.join(__dirname, "../../lambda-bundle")),
       timeout: cdk.Duration.seconds(10),
       environment: {
@@ -49,7 +49,7 @@ export class RestApiStack extends cdk.Stack {
     // 3. Sentiment Handler - handles sentiment analysis for conversations
     const sentimentHandler = new lambda.Function(this, "SentimentHandler", {
       runtime: lambda.Runtime.NODEJS_20_X,
-      handler: "handlers/sentiment.handler", // ← FIXED: Added 'handlers/' prefix
+      handler: "handlers/rest/sentiment.handler", // ← FIXED: Correct path with rest/ subfolder
       code: lambda.Code.fromAsset(path.join(__dirname, "../../lambda-bundle")),
       timeout: cdk.Duration.seconds(60),
       memorySize: 512,
