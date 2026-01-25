@@ -29,7 +29,7 @@ export class WebSocketStack extends cdk.Stack {
     // Connect Handler
     const connectHandler = new lambda.Function(this, "ConnectHandlerV2", {
       runtime: lambda.Runtime.NODEJS_20_X,
-      handler: "connect.handler",
+      handler: "handlers/websocket/connect.handler", // ← FIXED: Added handlers/websocket/ prefix
       code: lambda.Code.fromAsset(lambdaCodePath),
       timeout: cdk.Duration.seconds(10),
       environment: {
@@ -40,7 +40,7 @@ export class WebSocketStack extends cdk.Stack {
     // Disconnect Handler
     const disconnectHandler = new lambda.Function(this, "DisconnectHandlerV2", {
       runtime: lambda.Runtime.NODEJS_20_X,
-      handler: "disconnect.handler",
+      handler: "handlers/websocket/disconnect.handler", // ← FIXED: Added handlers/websocket/ prefix
       code: lambda.Code.fromAsset(lambdaCodePath),
       timeout: cdk.Duration.seconds(10),
       environment: {
@@ -54,7 +54,7 @@ export class WebSocketStack extends cdk.Stack {
       "SendMessageHandlerV2",
       {
         runtime: lambda.Runtime.NODEJS_20_X,
-        handler: "sendMessage.handler",
+        handler: "handlers/websocket/sendMessage.handler", // ← FIXED: Added handlers/websocket/ prefix
         code: lambda.Code.fromAsset(lambdaCodePath),
         timeout: cdk.Duration.seconds(29),
         memorySize: 1024,
