@@ -4,7 +4,8 @@ import { DynamoDBService } from "../../services/dynamodb.service.js";
 const dynamoDBService = new DynamoDBService();
 
 // CloudFront domain
-const FRONTEND_URL = process.env.FRONTEND_URL || "";
+const FRONTEND_URL =
+  process.env.FRONTEND_URL || "https://d2x0j8qht8ctio.cloudfront.net";
 
 // Proper CORS headers
 const corsHeaders = {

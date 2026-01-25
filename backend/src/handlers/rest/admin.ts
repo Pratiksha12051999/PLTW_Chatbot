@@ -5,7 +5,8 @@ import { AdminMetrics, Conversation } from "../../types/index.js";
 const dynamoDBService = new DynamoDBService();
 
 // CloudFront domain - update this to your actual CloudFront URL
-const FRONTEND_URL = process.env.FRONTEND_URL || "";
+const FRONTEND_URL =
+  process.env.FRONTEND_URL || "https://d2x0j8qht8ctio.cloudfront.net";
 
 // Proper CORS headers for CloudFront origin
 const corsHeaders = {
