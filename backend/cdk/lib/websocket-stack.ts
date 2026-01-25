@@ -79,29 +79,19 @@ export class WebSocketStack extends cdk.Stack {
     // Grant SQS permissions
     escalationQueue.grantSendMessages(sendMessageHandler);
 
-    // Bedrock permissions
+    // Bedrock permissions - ALL actions needed (both bedrock and bedrock-agent-runtime)
     sendMessageHandler.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
-          "bedrock-agent-runtime:InvokeAgent",
+          "bedrock-agent-runtime:InvokeAgent", // Runtime calls
+          "bedrock:InvokeAgent", // Control plane - CRITICAL!
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream",
           "bedrock:Retrieve",
           "bedrock:RetrieveAndGenerate",
         ],
         resources: ["*"],
-      }),
-    );
-
-    // Nova Pro model permissions
-    sendMessageHandler.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ["bedrock:InvokeModel"],
-        resources: [
-          `arn:aws:bedrock:${this.region}::foundation-model/amazon.nova-pro-v1:0`,
-        ],
       }),
     );
 
