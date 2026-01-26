@@ -1,12 +1,14 @@
 import {
   BedrockAgentRuntimeClient,
   InvokeAgentCommand,
-} from '@aws-sdk/client-bedrock-agent-runtime';
+} from "@aws-sdk/client-bedrock-agent-runtime";
 
-const agentClient = new BedrockAgentRuntimeClient({ region: process.env.AWS_REGION });
+const agentClient = new BedrockAgentRuntimeClient({
+  region: process.env.AWS_REGION,
+});
 
-const AGENT_ID = process.env.BEDROCK_AGENT_ID || '';
-const AGENT_ALIAS_ID = process.env.BEDROCK_AGENT_ALIAS_ID || '';
+const AGENT_ID = process.env.BEDROCK_AGENT_ID || "";
+const AGENT_ALIAS_ID = process.env.BEDROCK_AGENT_ALIAS_ID || "";
 
 /**
  * Cleans the response by removing any unwanted prefixes the model might add
@@ -17,12 +19,12 @@ function cleanResponse(response: string): string {
     /^(Bot|Jordan|Assistant|AI|Helper|Support):\s*/i,
     /^(Hello,?\s*)?(I'm Jordan\.?\s*)?/i,
   ];
-  
+
   let cleaned = response.trim();
   for (const pattern of prefixPatterns) {
-    cleaned = cleaned.replace(pattern, '');
+    cleaned = cleaned.replace(pattern, "");
   }
-  
+
   return cleaned.trim();
 }
 
@@ -34,19 +36,49 @@ export class BedrockService {
    */
   async invokeAgent(
     prompt: string,
-    sessionId: string
+    sessionId: string,
   ): Promise<{ response: string; confidence: number; sources: string[] }> {
     try {
+      // ✅ FIX: Validate sessionId and generate fallback if needed
+      let validSessionId = sessionId;
+
+      if (
+        !sessionId ||
+        sessionId === "null" ||
+        sessionId === "undefined" ||
+        sessionId.trim() === ""
+      ) {
+        validSessionId = `fallback-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        console.warn(
+          "⚠️  Invalid sessionId received, using fallback:",
+          validSessionId,
+        );
+      }
+
+      // Validate environment variables
+      if (!AGENT_ID || !AGENT_ALIAS_ID) {
+        console.error("❌ Missing BEDROCK_AGENT_ID or BEDROCK_AGENT_ALIAS_ID");
+        throw new Error("Bedrock agent configuration is missing");
+      }
+
+      console.log("🤖 ===== BEDROCK INVOCATION =====");
+      console.log("🤖 Agent ID:", AGENT_ID);
+      console.log("🤖 Agent Alias ID:", AGENT_ALIAS_ID);
+      console.log("🤖 Session ID:", validSessionId);
+      console.log("🤖 Prompt length:", prompt.length);
+      console.log("🤖 Region:", process.env.AWS_REGION);
+      console.log("🤖 ================================");
+
       const command = new InvokeAgentCommand({
         agentId: AGENT_ID,
         agentAliasId: AGENT_ALIAS_ID,
-        sessionId,
+        sessionId: validSessionId,
         inputText: prompt,
         enableTrace: true,
       });
 
       const response = await agentClient.send(command);
-      let fullResponse = '';
+      let fullResponse = "";
       const sources: string[] = [];
       let confidence = 1.0;
 
@@ -59,7 +91,9 @@ export class BedrockService {
 
           if (event.trace?.trace?.orchestrationTrace) {
             const trace = event.trace.trace.orchestrationTrace;
-            if (trace.observation?.knowledgeBaseLookupOutput?.retrievedReferences) {
+            if (
+              trace.observation?.knowledgeBaseLookupOutput?.retrievedReferences
+            ) {
               trace.observation.knowledgeBaseLookupOutput.retrievedReferences.forEach(
                 (ref: any) => {
                   // Extract S3 location URIs
@@ -74,12 +108,16 @@ export class BedrockService {
                   if (ref.location?.confluenceLocation?.url) {
                     sources.push(ref.location.confluenceLocation.url);
                   }
-                }
+                },
               );
             }
           }
         }
       }
+
+      console.log("✅ Bedrock response received");
+      console.log("✅ Response length:", fullResponse.length);
+      console.log("✅ Sources found:", sources.length);
 
       if (fullResponse.length < 50) {
         confidence = 0.5;
@@ -89,26 +127,38 @@ export class BedrockService {
         "I don't have",
         "I cannot find",
         "I'm not sure",
-        'I apologize',
-        'I do not have access',
+        "I apologize",
+        "I do not have access",
       ];
-      if (lowConfidencePatterns.some((pattern) => fullResponse.includes(pattern))) {
+      if (
+        lowConfidencePatterns.some((pattern) => fullResponse.includes(pattern))
+      ) {
         confidence = 0.3;
       }
 
       // Clean any unwanted prefixes from the response
-      const cleanedResponse = cleanResponse(fullResponse) || 
-        'I apologize, but I was unable to generate a response. Please contact our support team.';
+      const cleanedResponse =
+        cleanResponse(fullResponse) ||
+        "I apologize, but I was unable to generate a response. Please contact our support team.";
 
       return {
         response: cleanedResponse,
         confidence,
         sources: [...new Set(sources)],
       };
-    } catch (error) {
-      console.error('Bedrock invocation error:', error);
+    } catch (error: any) {
+      console.error("❌ ===== BEDROCK ERROR =====");
+      console.error("❌ Error name:", error.name);
+      console.error("❌ Error message:", error.message);
+      console.error("❌ Error code:", error.code);
+      console.error("❌ HTTP Status:", error.$metadata?.httpStatusCode);
+      console.error("❌ Request ID:", error.$metadata?.requestId);
+      console.error("❌ Stack:", error.stack);
+      console.error("❌ ==========================");
+
       return {
-        response: 'I encountered an error processing your request. Please try again or contact support.',
+        response:
+          "I encountered an error processing your request. Please try again or contact support at 877.335.7589.",
         confidence: 0,
         sources: [],
       };
