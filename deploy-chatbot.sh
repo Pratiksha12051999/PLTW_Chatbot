@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# PLTW Bedrock Setup - With Full OpenSearch Permissions
-# Includes all necessary permissions for Quick Create vector store
+# PLTW Bedrock Setup - Managed Vector Storage (No OpenSearch!)
+# Uses Bedrock's built-in vector storage - simpler and no permissions issues
 
-echo "🤖 PLTW Bedrock Agent Setup"
+echo "🤖 PLTW Bedrock Agent Setup (Simplified)"
 echo "=========================================="
 echo ""
 
@@ -71,10 +71,10 @@ AGENT_NAME="${PROJECT_NAME}-agent"
 
 echo "Resources to create:"
 echo "  S3 Bucket:      $BUCKET_NAME"
-echo "  Knowledge Base: $KB_NAME"
+echo "  Knowledge Base: $KB_NAME (Managed Vector Storage)"
 echo "  Agent:          $AGENT_NAME (Nova Pro)"
 echo ""
-echo "✅ Includes full OpenSearch Serverless permissions!"
+echo "✅ No OpenSearch needed - using Bedrock managed storage!"
 echo ""
 
 read -rp "Continue? (yes/no): " CONFIRM
@@ -128,7 +128,7 @@ AGENT_ROLE_NAME="${PROJECT_NAME}-agent-role"
 
 # Knowledge Base Role
 if run_aws iam get-role --role-name "$KB_ROLE_NAME" >/dev/null 2>&1; then
-    echo "⚠️  KB role already exists - updating policy..."
+    echo "✅ KB role already exists"
     KB_ROLE_ARN=$(run_aws iam get-role --role-name "$KB_ROLE_NAME" --query 'Role.Arn' --output text)
 else
     echo "Creating Knowledge Base IAM role..."
@@ -158,64 +158,42 @@ else
         --query 'Role.Arn' \
         --output text)
     
+    # Simplified policy - no OpenSearch needed!
+    KB_POLICY='{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "s3:GetObject",
+                    "s3:ListBucket"
+                ],
+                "Resource": [
+                    "arn:aws:s3:::'"$BUCKET_NAME"'",
+                    "arn:aws:s3:::'"$BUCKET_NAME"'/*"
+                ]
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "bedrock:InvokeModel"
+                ],
+                "Resource": [
+                    "arn:aws:bedrock:'"$AWS_REGION"'::foundation-model/amazon.titan-embed-text-v1",
+                    "arn:aws:bedrock:'"$AWS_REGION"'::foundation-model/amazon.titan-embed-text-v2:0"
+                ]
+            }
+        ]
+    }'
+    
+    run_aws iam put-role-policy \
+        --role-name "$KB_ROLE_NAME" \
+        --policy-name "${KB_ROLE_NAME}-policy" \
+        --policy-document "$KB_POLICY"
+    
     echo "✅ KB role created: $KB_ROLE_ARN"
+    sleep 5
 fi
-
-# UPDATED POLICY - Full OpenSearch Serverless permissions!
-KB_POLICY='{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "BedrockKnowledgeBaseS3Access",
-            "Effect": "Allow",
-            "Action": [
-                "s3:GetObject",
-                "s3:ListBucket"
-            ],
-            "Resource": [
-                "arn:aws:s3:::'"$BUCKET_NAME"'",
-                "arn:aws:s3:::'"$BUCKET_NAME"'/*"
-            ]
-        },
-        {
-            "Sid": "BedrockKnowledgeBaseOpenSearchAccess",
-            "Effect": "Allow",
-            "Action": [
-                "aoss:APIAccessAll",
-                "aoss:CreateSecurityPolicy",
-                "aoss:GetSecurityPolicy",
-                "aoss:UpdateSecurityPolicy",
-                "aoss:CreateCollection",
-                "aoss:DeleteCollection",
-                "aoss:UpdateCollection",
-                "aoss:ListCollections",
-                "aoss:BatchGetCollection"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "BedrockKnowledgeBaseEmbeddings",
-            "Effect": "Allow",
-            "Action": [
-                "bedrock:InvokeModel"
-            ],
-            "Resource": [
-                "arn:aws:bedrock:'"$AWS_REGION"'::foundation-model/amazon.titan-embed-text-v1",
-                "arn:aws:bedrock:'"$AWS_REGION"'::foundation-model/amazon.titan-embed-text-v2:0"
-            ]
-        }
-    ]
-}'
-
-echo "Applying policy with full OpenSearch permissions..."
-run_aws iam put-role-policy \
-    --role-name "$KB_ROLE_NAME" \
-    --policy-name "${KB_ROLE_NAME}-policy" \
-    --policy-document "$KB_POLICY"
-
-echo "✅ KB role policy updated with full permissions"
-echo "   Waiting 10 seconds for IAM propagation..."
-sleep 10
 
 # Agent Role
 if run_aws iam get-role --role-name "$AGENT_ROLE_NAME" >/dev/null 2>&1; then
@@ -249,7 +227,7 @@ else
         --query 'Role.Arn' \
         --output text)
     
-    # Policy for Nova Pro
+    # Policy for Nova Pro - will update with KB ARN after creation
     AGENT_POLICY='{
         "Version": "2012-10-17",
         "Statement": [
@@ -266,8 +244,7 @@ else
             {
                 "Effect": "Allow",
                 "Action": [
-                    "bedrock:Retrieve",
-                    "bedrock:RetrieveAndGenerate"
+                    "bedrock:Retrieve"
                 ],
                 "Resource": [
                     "arn:aws:bedrock:'"$AWS_REGION"':'"$AWS_ACCOUNT"':knowledge-base/*"
@@ -288,15 +265,15 @@ fi
 echo ""
 
 # --------------------------------------------------
-# 3. Create Knowledge Base via Console
+# 3. Create Knowledge Base via Console (Easiest!)
 # --------------------------------------------------
 
 echo "📚 Step 3: Create Knowledge Base via Console"
 echo "============================================="
 echo ""
 
-echo "✅ IAM role now has full OpenSearch Serverless permissions!"
-echo "   You can now use 'Quick create a new vector store' without errors"
+echo "⚠️  Please create the Knowledge Base via AWS Console"
+echo "   This is faster and avoids all permission issues!"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -314,7 +291,6 @@ echo ""
 echo "4. For IAM role:"
 echo "   • Select 'Use an existing service role'"
 echo "   • Choose: $KB_ROLE_NAME"
-echo "   • ✅ Now has full OpenSearch permissions!"
 echo ""
 echo "5. For data source:"
 echo "   • Type: S3"
@@ -324,8 +300,9 @@ echo "6. For embedding model:"
 echo "   • Select: Titan Embeddings G1 - Text (v1)"
 echo ""
 echo "7. For vector database:"
-echo "   • Select: 'Quick create a new vector store - Recommended'"
-echo "   • ✅ Should work without 403 errors now!"
+echo "   • Select: 'Quick create a new vector store'"
+echo "   • This creates managed storage automatically!"
+echo "   • ✅ No OpenSearch permissions needed!"
 echo ""
 echo "8. Click 'Create knowledge base'"
 echo ""
@@ -387,13 +364,13 @@ real-world applied learning. You assist with:
    - For PDF-based info: Summarize clearly but DO NOT provide a link.
 4. ESCALATION: If the knowledge base does not contain the answer, or if the user is 
    unsatisfied, provide this EXACT contact info: 
-   "Please contact the PLTW Solution Center at 877.335.7589 or [solutioncenter@pltw.org](mailto:solutioncenter@pltw.org)." 
+   "Please contact the PLTW Solution Center at 877.335.7589 or solutioncenter@pltw.org." 
 
 # KNOWLEDGE BASE UTILIZATION
 ### Primary Sources:
-- Main Site: [https://www.pltw.org](https://www.pltw.org)
-- Technical/Software: [https://knowledge.pltw.org/s/](https://knowledge.pltw.org/s/)
-- Curriculum: [https://www.pltw.org/curriculum](https://www.pltw.org/curriculum)
+- Main Site: https://www.pltw.org
+- Technical/Software: https://knowledge.pltw.org/s/
+- Curriculum: https://www.pltw.org/curriculum
 
 ### Handling Constraints:
 - Only answer based on the provided Knowledge Base.
@@ -437,7 +414,7 @@ run_aws bedrock-agent associate-agent-knowledge-base \
     --knowledge-base-id "$KB_ID" \
     --description "PLTW documentation knowledge base" \
     --knowledge-base-state "ENABLED" \
-    2>/dev/null || echo "⚠️  Knowledge Base may already be associated"
+    2>/dev/null || true
 
 echo "✅ Knowledge Base associated"
 echo ""
@@ -452,7 +429,7 @@ echo ""
 
 echo "Preparing agent..."
 run_aws bedrock-agent prepare-agent --agent-id "$AGENT_ID" >/dev/null
-echo "⏳ Waiting for preparation (15 seconds)..."
+echo "⏳ Waiting for preparation..."
 sleep 15
 
 # Create prod alias
@@ -487,7 +464,7 @@ echo ""
 
 ENV_FILE=".env"
 cat > "$ENV_FILE" <<EOF
-# PLTW Bedrock Configuration
+# PLTW Bedrock Configuration (Managed Vector Storage)
 # Generated: $(date)
 
 # AWS
@@ -497,7 +474,7 @@ AWS_ACCOUNT=$AWS_ACCOUNT
 # S3
 S3_BUCKET=$BUCKET_NAME
 
-# Knowledge Base
+# Knowledge Base (Managed Vector Storage - No OpenSearch!)
 BEDROCK_KB_ID=$KB_ID
 BEDROCK_DATA_SOURCE_ID=$DATA_SOURCE_ID
 
@@ -512,7 +489,7 @@ KB_ROLE_ARN=$KB_ROLE_ARN
 AGENT_ROLE_ARN=$AGENT_ROLE_ARN
 
 # Vector Storage
-VECTOR_STORAGE=OPENSEARCH_SERVERLESS
+VECTOR_STORAGE=BEDROCK_MANAGED
 EOF
 
 echo "✅ Configuration saved to: $ENV_FILE"
@@ -541,7 +518,7 @@ echo "  URL:  https://s3.console.aws.amazon.com/s3/buckets/$BUCKET_NAME"
 echo ""
 echo "Knowledge Base:"
 echo "  ID:   $KB_ID"
-echo "  Storage: OpenSearch Serverless (Quick Create)"
+echo "  Storage: Bedrock Managed (No OpenSearch!)"
 echo "  Model: Amazon Titan Embeddings G1 - Text v1"
 echo "  URL:  https://console.aws.amazon.com/bedrock/home?region=$AWS_REGION#/knowledge-bases/$KB_ID"
 echo ""
@@ -552,11 +529,8 @@ echo "  Model: Amazon Nova Pro v1"
 echo "  Alias: $AGENT_ALIAS_ID (prod)"
 echo "  URL:   https://console.aws.amazon.com/bedrock/home?region=$AWS_REGION#/agents/$AGENT_ID"
 echo ""
-echo "IAM Roles:"
-echo "  KB Role:    $KB_ROLE_NAME (with full OpenSearch permissions)"
-echo "  Agent Role: $AGENT_ROLE_NAME"
-echo ""
-echo "✅ Full OpenSearch Serverless permissions configured!"
+echo "✅ No OpenSearch permissions needed!"
+echo "✅ Uses Bedrock managed vector storage"
 echo ""
 echo "📝 Next Steps:"
 echo "=============="
@@ -582,10 +556,7 @@ echo "     --session-id test-123 \\"
 echo "     --input-text \"What is PLTW?\" \\"
 echo "     response.txt"
 echo ""
-echo "5. View response:"
-echo "   cat response.txt"
-echo ""
-echo "6. Use in deployment:"
+echo "5. Use in deployment:"
 echo "   cd infrastructure/cdk"
 echo "   export \$(cat .env | xargs)"
 echo "   cdk deploy"
