@@ -41,12 +41,7 @@ export const useWebSocket = (url: string) => {
   const [isTyping, setIsTyping] = useState(false);
   const [shouldEscalate, setShouldEscalate] = useState(false);
   const [contactInfo, setContactInfo] = useState<ContactInfo | null>(null);
-
-  // ✅ FIX: Generate conversationId immediately instead of null
-  const [conversationId, setConversationId] = useState<string>(() => {
-    return `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  });
-
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [queueInfo, setQueueInfo] = useState<QueueInfo | null>(null);
   const [isEscalated, setIsEscalated] = useState(false);
 
@@ -106,7 +101,9 @@ export const useWebSocket = (url: string) => {
                 if (exists) return prev;
                 return [...prev, data.message];
               });
-              // Note: We don't update conversationId from backend anymore since we generate it upfront
+              setConversationId(
+                (prevId) => prevId || data.message.conversationId,
+              );
             }
             break;
 
@@ -203,7 +200,7 @@ export const useWebSocket = (url: string) => {
       const messageData = {
         action: "sendMessage",
         message: content,
-        conversationId, // ✅ Now always has a valid UUID
+        conversationId,
         category,
         fileIds,
         language,
@@ -236,12 +233,7 @@ export const useWebSocket = (url: string) => {
 
   const resetChat = useCallback(() => {
     setMessages([]);
-
-    // ✅ FIX: Generate NEW conversation ID instead of setting to null
-    setConversationId(
-      `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    );
-
+    setConversationId(null);
     setShouldEscalate(false);
     setContactInfo(null);
     setIsTyping(false);

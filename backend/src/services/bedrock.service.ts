@@ -39,40 +39,10 @@ export class BedrockService {
     sessionId: string,
   ): Promise<{ response: string; confidence: number; sources: string[] }> {
     try {
-      // ✅ FIX: Validate sessionId and generate fallback if needed
-      let validSessionId = sessionId;
-
-      if (
-        !sessionId ||
-        sessionId === "null" ||
-        sessionId === "undefined" ||
-        sessionId.trim() === ""
-      ) {
-        validSessionId = `fallback-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        console.warn(
-          "⚠️  Invalid sessionId received, using fallback:",
-          validSessionId,
-        );
-      }
-
-      // Validate environment variables
-      if (!AGENT_ID || !AGENT_ALIAS_ID) {
-        console.error("❌ Missing BEDROCK_AGENT_ID or BEDROCK_AGENT_ALIAS_ID");
-        throw new Error("Bedrock agent configuration is missing");
-      }
-
-      console.log("🤖 ===== BEDROCK INVOCATION =====");
-      console.log("🤖 Agent ID:", AGENT_ID);
-      console.log("🤖 Agent Alias ID:", AGENT_ALIAS_ID);
-      console.log("🤖 Session ID:", validSessionId);
-      console.log("🤖 Prompt length:", prompt.length);
-      console.log("🤖 Region:", process.env.AWS_REGION);
-      console.log("🤖 ================================");
-
       const command = new InvokeAgentCommand({
         agentId: AGENT_ID,
         agentAliasId: AGENT_ALIAS_ID,
-        sessionId: validSessionId,
+        sessionId,
         inputText: prompt,
         enableTrace: true,
       });
@@ -115,10 +85,6 @@ export class BedrockService {
         }
       }
 
-      console.log("✅ Bedrock response received");
-      console.log("✅ Response length:", fullResponse.length);
-      console.log("✅ Sources found:", sources.length);
-
       if (fullResponse.length < 50) {
         confidence = 0.5;
       }
@@ -146,19 +112,11 @@ export class BedrockService {
         confidence,
         sources: [...new Set(sources)],
       };
-    } catch (error: any) {
-      console.error("❌ ===== BEDROCK ERROR =====");
-      console.error("❌ Error name:", error.name);
-      console.error("❌ Error message:", error.message);
-      console.error("❌ Error code:", error.code);
-      console.error("❌ HTTP Status:", error.$metadata?.httpStatusCode);
-      console.error("❌ Request ID:", error.$metadata?.requestId);
-      console.error("❌ Stack:", error.stack);
-      console.error("❌ ==========================");
-
+    } catch (error) {
+      console.error("Bedrock invocation error:", error);
       return {
         response:
-          "I encountered an error processing your request. Please try again or contact support at 877.335.7589.",
+          "I encountered an error processing your request. Please try again or contact support.",
         confidence: 0,
         sources: [],
       };
