@@ -84,8 +84,8 @@ export class WebSocketStack extends cdk.Stack {
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
-          // "bedrock-agent-runtime:InvokeAgent", // Runtime calls
-          "bedrock:InvokeAgent", // Control plane - CRITICAL!
+          "bedrock-agent-runtime:InvokeAgent", // Runtime calls - REQUIRED for BedrockAgentRuntimeClient
+          "bedrock:InvokeAgent", // Control plane
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream",
           "bedrock:Retrieve",
