@@ -32,18 +32,7 @@ A GitHub personal access token with repo permissions is needed for Amplify deplo
 
 For detailed instructions, see: [GitHub Personal Access Tokens Documentation](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
 
-### 3. Bedrock Agent Setup
-
-Before deploying, you need to create a Bedrock Agent with Knowledge Base:
-
-1. Go to **AWS Console > Amazon Bedrock > Agents**
-2. Create a new Agent with appropriate instructions for PLTW support
-3. Create a Knowledge Base with PLTW documentation sources
-4. Attach the Knowledge Base to the Agent
-5. Create an Agent Alias
-6. Note the **Agent ID** and **Agent Alias ID**
-
-### 4. AWS Account Permissions
+### 3. AWS Account Permissions
 
 Ensure your AWS account has permissions to create and manage the following resources:
 
@@ -57,18 +46,13 @@ Ensure your AWS account has permissions to create and manage the following resou
 - Amplify
 - IAM Roles and Policies
 - CloudWatch Logs
+- CodeBuild
 
 ---
 
-## Manual CDK Deployment
+## Deployment using CloudShell
 
 This is the **recommended deployment method**.
-
-### Prerequisites
-
-- **AWS CLI** (v2.x) - [Install AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-- **Node.js** (v20.x or later) - [Download Node.js](https://nodejs.org/)
-- **AWS CDK** (v2.x) - Install via `npm install -g aws-cdk`
 
 ### Deployment Steps
 
@@ -84,112 +68,125 @@ cd pltw-chatbot/
 #### 2. Configure AWS CLI
 
 ```bash
-aws configure
+unset AWS_PROFILE
 ```
 
-Enter your:
-- AWS Access Key ID
-- AWS Secret Access Key
-- Default region: `us-east-1` (recommended)
-- Default output format: `json`
+#### 3. Deploy Bedrock Agent and Knowledge Base
 
-#### 3. Install Dependencies
+First, create the Bedrock Agent with Knowledge Base:
 
 ```bash
-# Frontend dependencies
-cd frontend
-npm install
-
-# Backend dependencies
-cd ../backend
-npm install
-
-# CDK dependencies
-cd cdk
-npm install
+chmod +x deploy-chatbot.sh
+./deploy-chatbot.sh
 ```
 
-#### 4. Configure Environment Variables
+The script will guide you through the setup process:
 
-Create environment files from examples:
+1. **Configuration**: Enter your AWS region when prompted (default: us-east-1)
+
+2. **S3 Bucket**: Automatically creates a versioned S3 bucket for your documentation
+
+3. **IAM Roles**: Creates two roles with necessary permissions:
+   - `pltw-support-kb-role` - For Knowledge Base (S3, OpenSearch, Embeddings)
+   - `pltw-support-agent-role` - For Bedrock Agent (broader model invocation permissions)
+
+4. **Knowledge Base (Manual Step)**:
+   - The script will pause and provide instructions to create the Knowledge Base in the AWS Console
+   - After creation, note down and enter:
+     - **Knowledge Base ID** (e.g., `ABCDEFGHIJ`)
+     - **Data Source ID** (found under the Data Sources tab)
+
+5. **Bedrock Agent**: Automatically creates the agent with Nova Pro model and associates it with your Knowledge Base
+
+6. **Agent Alias**: Creates a `prod` alias for the agent
+
+7. **Configuration Saved**: All IDs are saved to `.env` file:
+   ```
+   BEDROCK_AGENT_ID=<your-agent-id>
+   BEDROCK_AGENT_ALIAS_ID=<your-alias-id>
+   BEDROCK_KB_ID=<your-kb-id>
+   BEDROCK_DATA_SOURCE_ID=<your-datasource-id>
+   ```
+
+#### 4. Upload Documentation and Sync Knowledge Base
+
+1. Navigate to **S3 Console** → Select your bucket (`pltw-support-docs-<account-id>`)
+2. Click **Upload** → Add your documentation files → Click **Upload**
+3. Navigate to **Bedrock Console** → **Knowledge Bases** → Select your Knowledge Base
+4. Go to **Data Sources** tab → Select your data source → Click **Sync**
+
+To check ingestion status via CLI:
 
 ```bash
-# Backend environment
-cp backend/.env.example backend/.env
+aws bedrock-agent list-ingestion-jobs \
+  --knowledge-base-id <YOUR_KB_ID> \
+  --data-source-id <YOUR_DATA_SOURCE_ID>
 ```
 
-Edit `backend/.env` with your Bedrock Agent details:
-```
-BEDROCK_AGENT_ID=your-agent-id
-BEDROCK_AGENT_ALIAS_ID=your-agent-alias-id
-AWS_REGION=us-east-1
-```
+> **Note**: Run the sync whenever you update files in S3 to sync changes with the Knowledge Base.
 
-#### 5. Build Lambda Bundle
+#### 5. Deploy the Application Infrastructure
+
+After the Bedrock Agent and Knowledge Base are set up, deploy the application infrastructure:
 
 ```bash
-cd backend
-npm run bundle
+chmod +x one_click_deploy.sh
+./one_click_deploy.sh
 ```
 
-This creates the `lambda-bundle/` directory with compiled Lambda code.
+The script will guide you through the deployment:
 
-#### 6. Bootstrap CDK (First-time only)
+1. **AWS Authentication**: Detects CloudShell environment or prompts for AWS profile
 
-```bash
-cd backend/cdk
-cdk bootstrap
-```
+2. **Project Configuration**:
+   - Enter project name (default: `pltw-chatbot`)
+   - Select environment (`dev`/`staging`/`prod`)
+   - Confirm AWS region
 
-#### 7. Deploy the Stacks
+3. **GitHub Repository**: Detects or prompts for your forked repository URL
 
-```bash
-cdk deploy --all
-```
+4. **Bedrock Configuration**:
+   - Automatically loads Agent ID and Alias ID from `.env` file (created by `deploy-chatbot.sh`)
+   - Prompts for any missing values
 
-When prompted, review the IAM changes and type `y` to confirm.
+5. **Action Selection**: Choose `deploy` to deploy the infrastructure
 
-The deployment creates 6 stacks:
-- **DynamoDBStack**: DynamoDB tables
-- **S3Stack**: S3 bucket for file uploads
-- **CognitoStack**: Cognito User Pool
-- **WebSocketStack**: WebSocket API and Lambda functions
-- **RestApiStack**: REST API and Lambda functions
-- **AmplifyStack**: Amplify app for frontend hosting
+6. **CodeBuild Setup**: Creates IAM role and CodeBuild project for deployment
+
+7. **Build Execution**: Starts the deployment build which provisions:
+   - **DynamoDB Tables**: `pltw-connections`, `pltw-conversations`
+   - **SQS Queue**: `pltw-escalation-queue.fifo`
+   - **Lambda Functions**: WebSocket handlers (connect, disconnect, sendMessage)
+   - **API Gateway**: WebSocket API and REST API
+   - **Cognito**: User pool for admin authentication
+   - **Amplify**: Frontend hosting
+
+8. **Build Monitoring**: Optionally monitor build progress in real-time
+
+9. **Deployment Outputs**: Upon successful completion, displays:
+   ```
+   🖥️  Frontend:    https://<app-id>.amplifyapp.com
+   🔌 WebSocket:   wss://<api-id>.execute-api.<region>.amazonaws.com/prod
+   🔗 REST API:    https://<api-id>.execute-api.<region>.amazonaws.com/prod
+   ```
+
+> **Note**: The deployment typically takes 10-15 minutes. Outputs are also saved to `.deployment-outputs-<environment>.txt`.
 
 ---
 
 ## Post-Deployment Steps
 
-### 1. Note the CDK Outputs
+### 1. Note the Outputs
 
-After deployment, note these important outputs from the terminal:
+After deployment, note down the following from the output from codebuild:
 
-| Output | Description |
-|--------|-------------|
-| `WebSocketURL` | WebSocket API endpoint |
-| `RestApiUrl` | REST API endpoint |
-| `CognitoUserPoolId` | Cognito User Pool ID |
-| `CognitoClientId` | Cognito App Client ID |
-| `AmplifyAppUrl` | Frontend application URL |
+- Frontend URL
+- WebSocket URL
+- REST API URL
 
-### 2. Configure Frontend Environment
+These are also saved in `.deployment-outputs-<environment>.txt`.
 
-Create the frontend environment file:
-
-```bash
-cp frontend/.env.example frontend/.env
-```
-
-Edit `frontend/.env` with the CDK outputs:
-```
-NEXT_PUBLIC_WEBSOCKET_URL=wss://your-websocket-api.execute-api.us-east-1.amazonaws.com/prod
-NEXT_PUBLIC_REST_API_URL=https://your-rest-api.execute-api.us-east-1.amazonaws.com/prod
-NEXT_PUBLIC_COGNITO_USER_POOL_ID=your-user-pool-id
-NEXT_PUBLIC_COGNITO_CLIENT_ID=your-client-id
-```
-
-### 3. Create Admin User in Cognito
+### 2. Create Admin User in Cognito
 
 Create an admin user for the dashboard:
 
@@ -204,55 +201,24 @@ Create an admin user for the dashboard:
 
 The user will reset their password on first login.
 
-### 4. Access the Application
+### 3. Set Admin Password (Optional)
 
-1. Go to **AWS Console > AWS Amplify**
-2. Select the app created by the stack
-3. Click on the **Amplify URL** to access the chatbot
-4. Navigate to `/admin` to access the admin dashboard
-
----
-
-## Local Development
-
-### Run Frontend Locally
+To set a permanent password directly:
 
 ```bash
-cd frontend
-npm run dev
+aws cognito-idp admin-set-user-password \
+  --user-pool-id <YOUR_USER_POOL_ID> \
+  --username admin@example.com \
+  --password "YourSecurePassword123!" \
+  --permanent \
+  --region us-east-1
 ```
 
-Access at `http://localhost:3000`
+### 4. Test the Application
 
-### Run Tests
-
-```bash
-# Frontend tests
-cd frontend
-npm test
-
-# Backend tests
-cd backend
-npm test
-```
-
----
-
-## CDK Outputs
-
-After deployment, note these important outputs:
-
-| Output | Description |
-|--------|-------------|
-| `WebSocketURL` | WebSocket API endpoint for chat |
-| `WebSocketApiId` | WebSocket API ID |
-| `RestApiUrl` | REST API endpoint for admin/uploads |
-| `ConnectionsTableName` | DynamoDB connections table |
-| `ConversationsTableName` | DynamoDB conversations table |
-| `FileAttachmentsTableName` | DynamoDB file attachments table |
-| `UploadsBucketName` | S3 bucket for file uploads |
-| `CognitoUserPoolId` | Cognito User Pool ID |
-| `CognitoClientId` | Cognito App Client ID |
+1. Open the Frontend URL in your browser
+2. Test the chatbot with sample questions
+3. Log into the admin dashboard with your Cognito credentials
 
 ---
 
@@ -263,6 +229,7 @@ After deployment, note these important outputs:
 **Error**: "This stack uses assets, so the toolkit stack must be deployed"
 
 **Solution**:
+
 ```bash
 cdk bootstrap aws://ACCOUNT_ID/REGION
 ```
@@ -272,15 +239,49 @@ cdk bootstrap aws://ACCOUNT_ID/REGION
 **Error**: Access denied errors during deployment
 
 **Solution**:
+
 - Verify your AWS credentials are configured correctly
 - Ensure your IAM user/role has the required permissions
 - Check if you're deploying to the correct region
+
+### Bedrock Access Denied
+
+**Error**: "Access denied when calling Bedrock"
+
+**Solution**:
+
+1. Verify the `pltw-support-agent-role` has broader permissions:
+   ```bash
+   aws iam get-role-policy --role-name pltw-support-agent-role --policy-name pltw-support-agent-role-policy
+   ```
+2. If needed, update with broader permissions:
+   ```bash
+   aws iam put-role-policy \
+     --role-name pltw-support-agent-role \
+     --policy-name pltw-support-agent-role-policy \
+     --policy-document '{
+       "Version": "2012-10-17",
+       "Statement": [
+         {
+           "Effect": "Allow",
+           "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream", "bedrock:GetFoundationModel"],
+           "Resource": "*"
+         },
+         {
+           "Effect": "Allow",
+           "Action": ["bedrock:Retrieve", "bedrock:RetrieveAndGenerate", "bedrock:ListKnowledgeBases"],
+           "Resource": "*"
+         }
+       ]
+     }'
+   ```
 
 ### Lambda Bundle Missing
 
 **Error**: "Cannot find lambda-bundle directory"
 
 **Solution**:
+
 ```bash
 cd backend
 npm run bundle
@@ -291,6 +292,7 @@ npm run bundle
 **Error**: Chat returns empty or error responses
 
 **Solution**:
+
 1. Verify the Bedrock Agent ID and Alias ID are correct in `.env`
 2. Ensure the Agent is properly configured with Knowledge Base
 3. Check CloudWatch logs for the SendMessage Lambda
@@ -301,20 +303,37 @@ npm run bundle
 **Error**: Cannot connect to WebSocket
 
 **Solution**:
+
 1. Verify the WebSocket URL in frontend environment
 2. Check that the WebSocket API is deployed
 3. Verify CORS settings if accessing from different domain
 4. Check CloudWatch logs for Connect Lambda
 
-### Amplify Build Failed
+### CodeBuild Failed
 
-**Error**: Frontend deployment failed
+**Error**: Build failed during deployment
 
 **Solution**:
-1. Check Amplify build logs in the AWS Console
-2. Verify the GitHub token has repo access
-3. Ensure the `frontend/` directory exists with valid Next.js app
-4. Check that environment variables are set in Amplify
+
+1. Check the CodeBuild logs in AWS Console
+2. Verify GitHub repository URL is correct
+3. Ensure all environment variables are set
+4. Check IAM role permissions for CodeBuild
+
+### Knowledge Base Sync Failed
+
+**Error**: Ingestion job failed
+
+**Solution**:
+
+1. Check the `pltw-support-kb-role` has S3 and OpenSearch permissions
+2. Verify S3 bucket contains valid documents
+3. Check ingestion job status:
+   ```bash
+   aws bedrock-agent list-ingestion-jobs \
+     --knowledge-base-id <KB_ID> \
+     --data-source-id <DS_ID>
+   ```
 
 ---
 
@@ -322,7 +341,15 @@ npm run bundle
 
 To remove all deployed resources:
 
-### Using CDK
+### Using the Deployment Script
+
+```bash
+./one_click_deploy.sh
+# Select "destroy" when prompted for action
+```
+
+### Using CDK Directly
+
 ```bash
 cd backend/cdk
 cdk destroy --all
@@ -332,7 +359,8 @@ cdk destroy --all
 
 ### Manual Cleanup
 
-If CDK destroy fails, manually delete:
+If automated destroy fails, manually delete:
+
 1. S3 bucket (empty it first)
 2. DynamoDB tables
 3. Cognito User Pool
@@ -340,6 +368,9 @@ If CDK destroy fails, manually delete:
 5. Lambda functions
 6. Amplify app
 7. CloudFormation stacks
+8. CodeBuild project and IAM role
+9. Bedrock Agent and Knowledge Base
+10. OpenSearch Serverless collection
 
 ---
 
