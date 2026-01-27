@@ -483,43 +483,92 @@ if [[ "$MONITOR" == "y" || "$MONITOR" == "yes" ]]; then
                     echo "📥 Fetching deployment outputs..."
                     sleep 5
                     
-                    STACK_NAME="PltchatbotStack-${ENVIRONMENT}"
+                    # Query individual stacks with correct output keys
+                    # Use aws directly instead of run_aws to avoid any scoping issues
+                    if [ "$IS_CLOUDSHELL" = true ]; then
+                        AWS_CMD="aws"
+                    else
+                        AWS_CMD="aws --profile $AWS_PROFILE"
+                    fi
                     
-                    WS_URL=$(run_aws cloudformation describe-stacks \
-                        --stack-name "$STACK_NAME" \
-                        --query 'Stacks[0].Outputs[?OutputKey==`WebSocketApiUrl`].OutputValue' \
+                    WS_URL=$($AWS_CMD cloudformation describe-stacks \
+                        --stack-name "WebSocketStack" \
+                        --query 'Stacks[0].Outputs[?OutputKey==`WebSocketURL`].OutputValue' \
                         --output text 2>/dev/null || echo "Not available")
                     
-                    REST_URL=$(run_aws cloudformation describe-stacks \
-                        --stack-name "$STACK_NAME" \
+                    REST_URL=$($AWS_CMD cloudformation describe-stacks \
+                        --stack-name "RestApiStack" \
                         --query 'Stacks[0].Outputs[?OutputKey==`RestApiUrl`].OutputValue' \
                         --output text 2>/dev/null || echo "Not available")
                     
-                    FRONTEND_URL=$(run_aws cloudformation describe-stacks \
-                        --stack-name "$STACK_NAME" \
+                    FRONTEND_URL=$($AWS_CMD cloudformation describe-stacks \
+                        --stack-name "FrontendStack" \
                         --query 'Stacks[0].Outputs[?OutputKey==`FrontendUrl`].OutputValue' \
                         --output text 2>/dev/null || echo "Not available")
                     
-                    CONVERSATIONS_TABLE=$(run_aws cloudformation describe-stacks \
-                        --stack-name "$STACK_NAME" \
+                    CONVERSATIONS_TABLE=$($AWS_CMD cloudformation describe-stacks \
+                        --stack-name "PLTWChatbotDynamoDBStack" \
                         --query 'Stacks[0].Outputs[?OutputKey==`ConversationsTableName`].OutputValue' \
+                        --output text 2>/dev/null || echo "Not available")
+                    
+                    CONNECTIONS_TABLE=$($AWS_CMD cloudformation describe-stacks \
+                        --stack-name "PLTWChatbotDynamoDBStack" \
+                        --query 'Stacks[0].Outputs[?OutputKey==`ConnectionsTableName`].OutputValue' \
+                        --output text 2>/dev/null || echo "Not available")
+                    
+                    USER_POOL_ID=$($AWS_CMD cloudformation describe-stacks \
+                        --stack-name "CognitoStack" \
+                        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
+                        --output text 2>/dev/null || echo "Not available")
+                    
+                    USER_POOL_CLIENT_ID=$($AWS_CMD cloudformation describe-stacks \
+                        --stack-name "CognitoStack" \
+                        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
+                        --output text 2>/dev/null || echo "Not available")
+                    
+                    ESCALATION_QUEUE_URL=$($AWS_CMD cloudformation describe-stacks \
+                        --stack-name "SQSStack" \
+                        --query 'Stacks[0].Outputs[?OutputKey==`EscalationQueueUrl`].OutputValue' \
                         --output text 2>/dev/null || echo "Not available")
                     
                     echo ""
                     echo "🌐 DEPLOYMENT URLS"
                     echo "=================="
-                    echo "🖥️  Frontend:    $FRONTEND_URL"
-                    echo "🔌 WebSocket:   $WS_URL"
-                    echo "🔗 REST API:    $REST_URL"
+                    echo "🖥️  Frontend:     $FRONTEND_URL"
+                    echo "🔌 WebSocket:    $WS_URL"
+                    echo "🔗 REST API:     $REST_URL"
                     echo ""
                     echo "📊 RESOURCES"
                     echo "============"
-                    echo "💾 Conversations: $CONVERSATIONS_TABLE"
+                    echo "💾 Conversations Table: $CONVERSATIONS_TABLE"
+                    echo "💾 Connections Table:   $CONNECTIONS_TABLE"
+                    echo "📬 Escalation Queue:    $ESCALATION_QUEUE_URL"
+                    echo ""
+                    echo "🔐 COGNITO"
+                    echo "=========="
+                    echo "👤 User Pool ID:        $USER_POOL_ID"
+                    echo "🔑 User Pool Client ID: $USER_POOL_CLIENT_ID"
                     echo ""
                     echo "📝 NEXT STEPS"
                     echo "============="
-                    echo "1. Update frontend config with WebSocket URL"
+                    echo "1. Create admin user in Cognito:"
+                    if [ "$IS_CLOUDSHELL" = true ]; then
+                        echo "   aws cognito-idp admin-create-user \\"
+                        echo "     --user-pool-id $USER_POOL_ID \\"
+                        echo "     --username admin@example.com \\"
+                        echo "     --user-attributes Name=email,Value=admin@example.com \\"
+                        echo "     --temporary-password 'TempPass123!'"
+                    else
+                        echo "   aws cognito-idp admin-create-user \\"
+                        echo "     --user-pool-id $USER_POOL_ID \\"
+                        echo "     --username admin@example.com \\"
+                        echo "     --user-attributes Name=email,Value=admin@example.com \\"
+                        echo "     --temporary-password 'TempPass123!' \\"
+                        echo "     --profile $AWS_PROFILE"
+                    fi
+                    echo ""
                     echo "2. Test application: $FRONTEND_URL"
+                    echo ""
                     echo "3. Monitor logs:"
                     if [ "$IS_CLOUDSHELL" = true ]; then
                         echo "   aws logs tail /aws/lambda/sendMessage --follow"
@@ -535,10 +584,23 @@ if [[ "$MONITOR" == "y" || "$MONITOR" == "yes" ]]; then
 # Environment: $ENVIRONMENT
 # Deployed: $(date)
 
+# URLs
 FRONTEND_URL=$FRONTEND_URL
 WEBSOCKET_URL=$WS_URL
 REST_API_URL=$REST_URL
+
+# DynamoDB Tables
 CONVERSATIONS_TABLE=$CONVERSATIONS_TABLE
+CONNECTIONS_TABLE=$CONNECTIONS_TABLE
+
+# SQS
+ESCALATION_QUEUE_URL=$ESCALATION_QUEUE_URL
+
+# Cognito
+USER_POOL_ID=$USER_POOL_ID
+USER_POOL_CLIENT_ID=$USER_POOL_CLIENT_ID
+
+# AWS
 AWS_ACCOUNT=$AWS_ACCOUNT
 AWS_REGION=$AWS_REGION
 EOF
@@ -568,18 +630,55 @@ echo ""
 
 if [ "$ACTION" = "destroy" ]; then
     echo ""
+    echo "📋 Post-Destroy Cleanup Options"
+    echo "================================"
+    echo ""
+    
+    # Set AWS_CMD if not already set
+    if [ "$IS_CLOUDSHELL" = true ]; then
+        AWS_CMD="aws"
+    else
+        AWS_CMD="aws --profile $AWS_PROFILE"
+    fi
+    
     read -rp "Delete CodeBuild project and role? (y/n) [n]: " CLEANUP
     CLEANUP=$(printf '%s' "$CLEANUP" | tr '[:upper:]' '[:lower:]')
     
     if [[ "$CLEANUP" == "y" || "$CLEANUP" == "yes" ]]; then
         echo "Deleting CodeBuild project..."
-        run_aws codebuild delete-project --name "$CODEBUILD_PROJECT" 2>/dev/null || echo "  Already deleted"
+        $AWS_CMD codebuild delete-project --name "$CODEBUILD_PROJECT" 2>/dev/null || echo "  Already deleted"
         
         echo "Deleting CodeBuild role..."
-        run_aws iam detach-role-policy --role-name "$CODEBUILD_ROLE_NAME" --policy-arn arn:aws:iam::aws:policy/AdministratorAccess 2>/dev/null || true
-        run_aws iam delete-role --role-name "$CODEBUILD_ROLE_NAME" 2>/dev/null || echo "  Already deleted"
+        $AWS_CMD iam detach-role-policy --role-name "$CODEBUILD_ROLE_NAME" --policy-arn arn:aws:iam::aws:policy/AdministratorAccess 2>/dev/null || true
+        $AWS_CMD iam delete-role --role-name "$CODEBUILD_ROLE_NAME" 2>/dev/null || echo "  Already deleted"
         
-        echo "✅ Cleanup completed"
+        echo "✅ CodeBuild cleanup completed"
+    fi
+    
+    echo ""
+    echo "⚠️  Note: The CDK destroy should have deleted the CloudFormation stacks."
+    echo "   If any stacks remain, you can manually delete them:"
+    echo ""
+    echo "   Stacks to check:"
+    echo "   - WebSocketStack"
+    echo "   - RestApiStack"
+    echo "   - FrontendStack"
+    echo "   - CognitoStack"
+    echo "   - PLTWChatbotDynamoDBStack"
+    echo "   - SQSStack"
+    echo ""
+    echo "   To delete manually:"
+    if [ "$IS_CLOUDSHELL" = true ]; then
+        echo "   aws cloudformation delete-stack --stack-name <STACK_NAME>"
+    else
+        echo "   aws cloudformation delete-stack --stack-name <STACK_NAME> --profile $AWS_PROFILE"
+    fi
+    echo ""
+    echo "   ⚠️  For S3 buckets, empty them first before deleting the stack:"
+    if [ "$IS_CLOUDSHELL" = true ]; then
+        echo "   aws s3 rm s3://pltw-chatbot-frontend-$AWS_ACCOUNT --recursive"
+    else
+        echo "   aws s3 rm s3://pltw-chatbot-frontend-$AWS_ACCOUNT --recursive --profile $AWS_PROFILE"
     fi
 fi
 
@@ -594,13 +693,13 @@ if [ "$ACTION" = "deploy" ]; then
     echo ""
     if [ "$IS_CLOUDSHELL" = true ]; then
         echo "  View stacks:"
-        echo "    aws cloudformation list-stacks"
+        echo "    aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE"
         echo ""
         echo "  Monitor logs:"
         echo "    aws logs tail /aws/lambda/sendMessage --follow"
     else
         echo "  View stacks:"
-        echo "    aws cloudformation list-stacks --profile $AWS_PROFILE"
+        echo "    aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE --profile $AWS_PROFILE"
         echo ""
         echo "  Monitor logs:"
         echo "    aws logs tail /aws/lambda/sendMessage --follow --profile $AWS_PROFILE"
