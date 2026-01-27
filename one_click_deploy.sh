@@ -1,306 +1,47 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# PLTW Chatbot - One-Click Deployment
-# Auto-detects CloudShell or uses AWS CLI profiles
+# PLTW Bedrock Setup - With Full OpenSearch Permissions
+# Includes all necessary permissions for Quick Create vector store
 
-echo "🚀 PLTW Chatbot - One-Click Deployment"
-echo "======================================"
+echo "🤖 PLTW Bedrock Agent Setup"
+echo "=========================================="
 echo ""
 
 # --------------------------------------------------
-# 1. Detect Environment and Configure AWS Credentials
+# Configuration
 # --------------------------------------------------
 
-echo "📋 Step 1: AWS Authentication"
-echo "=============================="
+echo "📋 Configuration"
+echo "================"
 echo ""
 
-# Detect if running in AWS CloudShell
+# Detect CloudShell or use profile
 if [ -n "${AWS_EXECUTION_ENV:-}" ] || [ -n "${AWS_CLOUDSHELL:-}" ] || [ -d "/home/cloudshell-user" ]; then
-    echo "✅ Detected AWS CloudShell environment"
-    echo "   Using CloudShell IAM role credentials"
+    echo "✅ Detected AWS CloudShell"
     IS_CLOUDSHELL=true
 else
     echo "📍 Running on local machine"
     IS_CLOUDSHELL=false
     
-    # Check if AWS CLI is installed
     if ! command -v aws &> /dev/null; then
-        echo "❌ AWS CLI is not installed"
-        echo "Install from: https://aws.amazon.com/cli/"
+        echo "❌ AWS CLI not installed"
         exit 1
     fi
     
-    # List available profiles
-    echo ""
-    echo "Available AWS profiles:"
-    aws configure list-profiles 2>/dev/null || echo "  (none configured)"
+    echo "Available profiles:"
+    aws configure list-profiles 2>/dev/null || echo "  (none)"
     echo ""
     
-    # Prompt for profile
-    read -rp "Enter AWS profile name [default]: " AWS_PROFILE_INPUT
+    read -rp "Enter AWS profile [default]: " AWS_PROFILE_INPUT
     AWS_PROFILE=${AWS_PROFILE_INPUT:-default}
     export AWS_PROFILE
-    
-    echo "✅ Using AWS profile: $AWS_PROFILE"
+    echo "✅ Using profile: $AWS_PROFILE"
 fi
 
 echo ""
 
-# Check if jq is available
-if ! command -v jq &> /dev/null; then
-    echo "⚠️  jq is not installed (recommended for better output)"
-    echo "Install: brew install jq (macOS) or apt-get install jq (Linux)"
-    echo ""
-    read -rp "Continue without jq? (y/n): " CONTINUE
-    if [[ "$CONTINUE" != "y" && "$CONTINUE" != "yes" ]]; then
-        exit 1
-    fi
-    HAS_JQ=false
-else
-    HAS_JQ=true
-fi
-
-# Verify credentials
-echo "🔐 Verifying AWS credentials..."
-
-if [ "$IS_CLOUDSHELL" = true ]; then
-    AWS_CALLER=$(aws sts get-caller-identity 2>&1)
-else
-    AWS_CALLER=$(aws sts get-caller-identity --profile "$AWS_PROFILE" 2>&1)
-fi
-
-AWS_EXIT_CODE=$?
-
-if [ $AWS_EXIT_CODE -ne 0 ]; then
-    echo "❌ Failed to verify AWS credentials"
-    echo ""
-    echo "Error details:"
-    echo "$AWS_CALLER"
-    echo ""
-    
-    if [ "$IS_CLOUDSHELL" = false ]; then
-        echo "Troubleshooting:"
-        echo "1. Verify profile exists: aws configure list-profiles"
-        echo "2. Check profile config: aws configure list --profile $AWS_PROFILE"
-        echo "3. Test credentials: aws sts get-caller-identity --profile $AWS_PROFILE"
-        echo ""
-        echo "To configure a new profile:"
-        echo "  aws configure --profile $AWS_PROFILE"
-    fi
-    exit 1
-fi
-
-if [ "$HAS_JQ" = true ]; then
-    AWS_ACCOUNT=$(echo "$AWS_CALLER" | jq -r '.Account')
-    AWS_USER_ARN=$(echo "$AWS_CALLER" | jq -r '.Arn')
-else
-    # Parse without jq (less reliable)
-    AWS_ACCOUNT=$(echo "$AWS_CALLER" | grep -o '"Account"[^"]*"[^"]*"' | cut -d'"' -f4)
-    AWS_USER_ARN=$(echo "$AWS_CALLER" | grep -o '"Arn"[^"]*"[^"]*"' | tail -1 | cut -d'"' -f4)
-fi
-
-echo "✅ Credentials verified!"
-echo "   Account: $AWS_ACCOUNT"
-echo "   Identity: $AWS_USER_ARN"
-echo ""
-
-# --------------------------------------------------
-# 2. Project Configuration
-# --------------------------------------------------
-
-echo "📋 Step 2: Project Configuration"
-echo "================================="
-echo ""
-
-read -rp "Enter project name [pltw-chatbot]: " PROJECT_NAME
-PROJECT_NAME=${PROJECT_NAME:-pltw-chatbot}
-echo "✅ Project: $PROJECT_NAME"
-echo ""
-
-read -rp "Enter environment (dev/staging/prod) [dev]: " ENVIRONMENT
-ENVIRONMENT=${ENVIRONMENT:-dev}
-echo "✅ Environment: $ENVIRONMENT"
-echo ""
-
-# Get AWS region
-if [ "$IS_CLOUDSHELL" = true ]; then
-    AWS_REGION=$(aws configure get region 2>/dev/null || echo "us-east-1")
-else
-    AWS_REGION=$(aws configure get region --profile "$AWS_PROFILE" 2>/dev/null || echo "us-east-1")
-fi
-
-read -rp "Enter AWS region [$AWS_REGION]: " AWS_REGION_INPUT
-AWS_REGION=${AWS_REGION_INPUT:-$AWS_REGION}
-export AWS_DEFAULT_REGION="$AWS_REGION"
-echo "✅ Region: $AWS_REGION"
-echo ""
-
-# --------------------------------------------------
-# 3. GitHub Configuration
-# --------------------------------------------------
-
-echo "📋 Step 3: GitHub Repository"
-echo "============================="
-echo ""
-
-GITHUB_URL=$(git remote get-url origin 2>/dev/null || echo "")
-if [ -n "$GITHUB_URL" ]; then
-    echo "Detected: $GITHUB_URL"
-    read -rp "Use this URL? (y/n) [y]: " USE_DETECTED
-    USE_DETECTED=${USE_DETECTED:-y}
-    if [[ "$USE_DETECTED" != "y" && "$USE_DETECTED" != "yes" ]]; then
-        GITHUB_URL=""
-    fi
-fi
-
-if [ -z "$GITHUB_URL" ]; then
-    read -rp "Enter GitHub repository URL: " GITHUB_URL
-fi
-
-if [ -z "$GITHUB_URL" ]; then
-    echo "❌ GitHub URL is required"
-    exit 1
-fi
-
-echo "✅ GitHub: $GITHUB_URL"
-
-if [[ $GITHUB_URL =~ github\.com[:/]([^/]+)/([^/]+)(\.git)?$ ]]; then
-    GITHUB_OWNER="${BASH_REMATCH[1]}"
-    GITHUB_REPO="${BASH_REMATCH[2]%.git}"
-    echo "✅ Repository: $GITHUB_OWNER/$GITHUB_REPO"
-fi
-echo ""
-
-# --------------------------------------------------
-# 4. Bedrock Configuration
-# --------------------------------------------------
-
-echo "📋 Step 4: Bedrock Configuration"
-echo "================================="
-echo ""
-
-# Check if .env file exists
-if [ -f ".env" ]; then
-    echo "Found .env file with configuration"
-    read -rp "Load Bedrock IDs from .env? (y/n) [y]: " LOAD_ENV
-    LOAD_ENV=${LOAD_ENV:-y}
-    
-    if [[ "$LOAD_ENV" == "y" || "$LOAD_ENV" == "yes" ]]; then
-        # Load from .env
-        if [ "$HAS_JQ" = true ]; then
-            BEDROCK_AGENT_ID=$(grep "BEDROCK_AGENT_ID=" .env | cut -d'=' -f2)
-            BEDROCK_AGENT_ALIAS_ID=$(grep "BEDROCK_AGENT_ALIAS_ID=" .env | cut -d'=' -f2)
-            KNOWLEDGE_BASE_ID=$(grep "BEDROCK_KB_ID=" .env | cut -d'=' -f2)
-        else
-            BEDROCK_AGENT_ID=$(grep "BEDROCK_AGENT_ID=" .env | cut -d'=' -f2)
-            BEDROCK_AGENT_ALIAS_ID=$(grep "BEDROCK_AGENT_ALIAS_ID=" .env | cut -d'=' -f2)
-            KNOWLEDGE_BASE_ID=$(grep "BEDROCK_KB_ID=" .env | cut -d'=' -f2)
-        fi
-        
-        echo "✅ Loaded from .env:"
-        echo "   Agent ID: ${BEDROCK_AGENT_ID:0:10}..."
-        echo "   Alias ID: ${BEDROCK_AGENT_ALIAS_ID:0:10}..."
-        if [ -n "$KNOWLEDGE_BASE_ID" ]; then
-            echo "   KB ID:    ${KNOWLEDGE_BASE_ID:0:10}..."
-        fi
-    fi
-fi
-
-# If not loaded from .env, prompt for values
-if [ -z "${BEDROCK_AGENT_ID:-}" ]; then
-    read -rp "Enter Bedrock Agent ID: " BEDROCK_AGENT_ID
-    if [ -z "$BEDROCK_AGENT_ID" ]; then
-        echo "❌ Bedrock Agent ID is required"
-        exit 1
-    fi
-    echo "✅ Agent ID: ${BEDROCK_AGENT_ID:0:10}..."
-fi
-
-if [ -z "${BEDROCK_AGENT_ALIAS_ID:-}" ]; then
-    read -rp "Enter Bedrock Agent Alias ID: " BEDROCK_AGENT_ALIAS_ID
-    if [ -z "$BEDROCK_AGENT_ALIAS_ID" ]; then
-        echo "❌ Bedrock Agent Alias ID is required"
-        exit 1
-    fi
-    echo "✅ Alias ID: ${BEDROCK_AGENT_ALIAS_ID:0:10}..."
-fi
-
-if [ -z "${KNOWLEDGE_BASE_ID:-}" ]; then
-    read -rp "Enter Knowledge Base ID (optional, press Enter to skip): " KNOWLEDGE_BASE_ID
-    if [ -n "$KNOWLEDGE_BASE_ID" ]; then
-        echo "✅ Knowledge Base: ${KNOWLEDGE_BASE_ID:0:10}..."
-    fi
-fi
-
-echo ""
-
-# --------------------------------------------------
-# 5. Deployment Action
-# --------------------------------------------------
-
-echo "📋 Step 5: Deployment Action"
-echo "============================="
-echo ""
-
-read -rp "Deploy or destroy? [deploy/destroy]: " ACTION
-ACTION=$(printf '%s' "$ACTION" | tr '[:upper:]' '[:lower:]')
-
-if [[ "$ACTION" != "deploy" && "$ACTION" != "destroy" ]]; then
-    echo "❌ Invalid action. Must be 'deploy' or 'destroy'"
-    exit 1
-fi
-echo "✅ Action: $ACTION"
-echo ""
-
-# --------------------------------------------------
-# 6. Configuration Summary
-# --------------------------------------------------
-
-echo "📋 Configuration Summary"
-echo "========================"
-echo ""
-echo "  AWS Account:          $AWS_ACCOUNT"
-if [ "$IS_CLOUDSHELL" = true ]; then
-echo "  Credentials:          CloudShell IAM Role"
-else
-echo "  AWS Profile:          $AWS_PROFILE"
-fi
-echo "  Project Name:         $PROJECT_NAME"
-echo "  Environment:          $ENVIRONMENT"
-echo "  AWS Region:           $AWS_REGION"
-echo "  GitHub URL:           $GITHUB_URL"
-echo "  Bedrock Agent ID:     ${BEDROCK_AGENT_ID:0:10}..."
-echo "  Bedrock Alias ID:     ${BEDROCK_AGENT_ALIAS_ID:0:10}..."
-if [ -n "$KNOWLEDGE_BASE_ID" ]; then
-echo "  Knowledge Base ID:    ${KNOWLEDGE_BASE_ID:0:10}..."
-fi
-echo "  Action:               $ACTION"
-echo ""
-
-read -rp "Continue with deployment? (yes/no): " CONFIRM
-CONFIRM=$(printf '%s' "$CONFIRM" | tr '[:upper:]' '[:lower:]')
-if [[ "$CONFIRM" != "yes" && "$CONFIRM" != "y" ]]; then
-    echo "❌ Deployment cancelled"
-    exit 0
-fi
-
-echo ""
-echo "🚀 Starting deployment process..."
-echo ""
-
-# --------------------------------------------------
-# 7. Create CodeBuild Service Role
-# --------------------------------------------------
-
-echo "🔧 Step 6: Setting up CodeBuild Service Role"
-echo "============================================="
-echo ""
-
-CODEBUILD_ROLE_NAME="${PROJECT_NAME}-codebuild-role"
-
-# Function to run AWS commands with appropriate profile
+# Helper function
 run_aws() {
     if [ "$IS_CLOUDSHELL" = true ]; then
         aws "$@"
@@ -309,402 +50,529 @@ run_aws() {
     fi
 }
 
-if run_aws iam get-role --role-name "$CODEBUILD_ROLE_NAME" >/dev/null 2>&1; then
-    echo "✅ CodeBuild role already exists"
-    CODEBUILD_ROLE_ARN=$(run_aws iam get-role --role-name "$CODEBUILD_ROLE_NAME" --query 'Role.Arn' --output text)
+# Get credentials
+AWS_IDENTITY=$(run_aws sts get-caller-identity)
+AWS_ACCOUNT=$(echo "$AWS_IDENTITY" | grep -o '"Account"[^"]*"[^"]*"' | cut -d'"' -f4)
+AWS_REGION=$(run_aws configure get region 2>/dev/null || echo "us-east-1")
+
+echo "Account: $AWS_ACCOUNT"
+
+read -rp "Enter AWS region [$AWS_REGION]: " REGION_INPUT
+AWS_REGION=${REGION_INPUT:-$AWS_REGION}
+export AWS_DEFAULT_REGION="$AWS_REGION"
+echo "✅ Region: $AWS_REGION"
+echo ""
+
+# Project configuration
+PROJECT_NAME="pltw-support"
+BUCKET_NAME="${PROJECT_NAME}-docs-${AWS_ACCOUNT}"
+KB_NAME="${PROJECT_NAME}-kb"
+AGENT_NAME="${PROJECT_NAME}-agent"
+
+echo "Resources to create:"
+echo "  S3 Bucket:      $BUCKET_NAME"
+echo "  Knowledge Base: $KB_NAME"
+echo "  Agent:          $AGENT_NAME (Nova Pro)"
+echo ""
+echo "✅ Includes full OpenSearch Serverless permissions!"
+echo ""
+
+read -rp "Continue? (yes/no): " CONFIRM
+if [[ "$CONFIRM" != "yes" && "$CONFIRM" != "y" ]]; then
+    echo "❌ Cancelled"
+    exit 0
+fi
+
+echo ""
+echo "🚀 Starting setup..."
+echo ""
+
+# --------------------------------------------------
+# 1. Create S3 Bucket
+# --------------------------------------------------
+
+echo "📦 Step 1: Creating S3 Bucket"
+echo "=============================="
+echo ""
+
+if run_aws s3 ls "s3://${BUCKET_NAME}" 2>/dev/null; then
+    echo "✅ Bucket already exists: $BUCKET_NAME"
 else
-    echo "Creating CodeBuild service role..."
+    echo "Creating bucket: $BUCKET_NAME"
     
-    TRUST_POLICY='{
+    if [ "$AWS_REGION" = "us-east-1" ]; then
+        run_aws s3 mb "s3://${BUCKET_NAME}"
+    else
+        run_aws s3 mb "s3://${BUCKET_NAME}" --region "$AWS_REGION"
+    fi
+    
+    run_aws s3api put-bucket-versioning \
+        --bucket "$BUCKET_NAME" \
+        --versioning-configuration Status=Enabled
+    
+    echo "✅ Bucket created"
+fi
+
+echo ""
+
+# --------------------------------------------------
+# 2. Create IAM Roles
+# --------------------------------------------------
+
+echo "🔐 Step 2: Creating IAM Roles"
+echo "=============================="
+echo ""
+
+KB_ROLE_NAME="${PROJECT_NAME}-kb-role"
+AGENT_ROLE_NAME="${PROJECT_NAME}-agent-role"
+
+# Knowledge Base Role
+if run_aws iam get-role --role-name "$KB_ROLE_NAME" >/dev/null 2>&1; then
+    echo "⚠️  KB role already exists - updating policy..."
+    KB_ROLE_ARN=$(run_aws iam get-role --role-name "$KB_ROLE_NAME" --query 'Role.Arn' --output text)
+else
+    echo "Creating Knowledge Base IAM role..."
+    
+    KB_TRUST_POLICY='{
         "Version": "2012-10-17",
         "Statement": [{
             "Effect": "Allow",
-            "Principal": {"Service": "codebuild.amazonaws.com"},
-            "Action": "sts:AssumeRole"
+            "Principal": {
+                "Service": "bedrock.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole",
+            "Condition": {
+                "StringEquals": {
+                    "aws:SourceAccount": "'"$AWS_ACCOUNT"'"
+                },
+                "ArnLike": {
+                    "aws:SourceArn": "arn:aws:bedrock:'"$AWS_REGION"':'"$AWS_ACCOUNT"':knowledge-base/*"
+                }
+            }
         }]
     }'
     
-    CODEBUILD_ROLE_ARN=$(run_aws iam create-role \
-        --role-name "$CODEBUILD_ROLE_NAME" \
-        --assume-role-policy-document "$TRUST_POLICY" \
-        --query 'Role.Arn' --output text)
+    KB_ROLE_ARN=$(run_aws iam create-role \
+        --role-name "$KB_ROLE_NAME" \
+        --assume-role-policy-document "$KB_TRUST_POLICY" \
+        --query 'Role.Arn' \
+        --output text)
     
-    echo "✅ Role created: $CODEBUILD_ROLE_ARN"
-    
-    echo "Attaching policies..."
-    run_aws iam attach-role-policy \
-        --role-name "$CODEBUILD_ROLE_NAME" \
-        --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
-    
-    echo "✅ Policies attached"
-    echo "⏳ Waiting for role to propagate (10 seconds)..."
-    sleep 10
+    echo "✅ KB role created: $KB_ROLE_ARN"
 fi
 
-echo ""
-
-# --------------------------------------------------
-# 8. Create/Update CodeBuild Project
-# --------------------------------------------------
-
-echo "🏗️  Step 7: Setting up CodeBuild Project"
-echo "========================================="
-echo ""
-
-CODEBUILD_PROJECT="${PROJECT_NAME}-deploy"
-
-# Build environment variables
-ENVIRONMENT_VARS='[
-    {"name":"ENVIRONMENT","value":"'"$ENVIRONMENT"'","type":"PLAINTEXT"},
-    {"name":"AWS_REGION","value":"'"$AWS_REGION"'","type":"PLAINTEXT"},
-    {"name":"AWS_ACCOUNT","value":"'"$AWS_ACCOUNT"'","type":"PLAINTEXT"},
-    {"name":"ACTION","value":"'"$ACTION"'","type":"PLAINTEXT"},
-    {"name":"BEDROCK_AGENT_ID","value":"'"$BEDROCK_AGENT_ID"'","type":"PLAINTEXT"},
-    {"name":"BEDROCK_AGENT_ALIAS_ID","value":"'"$BEDROCK_AGENT_ALIAS_ID"'","type":"PLAINTEXT"}
-'
-
-if [ -n "${KNOWLEDGE_BASE_ID:-}" ]; then
-    ENVIRONMENT_VARS+=',{"name":"KNOWLEDGE_BASE_ID","value":"'"$KNOWLEDGE_BASE_ID"'","type":"PLAINTEXT"}'
-fi
-
-ENVIRONMENT_VARS+=']'
-
-ENVIRONMENT_CONFIG='{
-    "type": "LINUX_CONTAINER",
-    "image": "aws/codebuild/amazonlinux-x86_64-standard:5.0",
-    "computeType": "BUILD_GENERAL1_LARGE",
-    "privilegedMode": true,
-    "environmentVariables": '"$ENVIRONMENT_VARS"'
+# UPDATED POLICY - Full OpenSearch Serverless permissions!
+KB_POLICY='{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "BedrockKnowledgeBaseS3Access",
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::'"$BUCKET_NAME"'",
+                "arn:aws:s3:::'"$BUCKET_NAME"'/*"
+            ]
+        },
+        {
+            "Sid": "BedrockKnowledgeBaseOpenSearchAccess",
+            "Effect": "Allow",
+            "Action": [
+                "aoss:APIAccessAll",
+                "aoss:CreateSecurityPolicy",
+                "aoss:GetSecurityPolicy",
+                "aoss:UpdateSecurityPolicy",
+                "aoss:CreateCollection",
+                "aoss:DeleteCollection",
+                "aoss:UpdateCollection",
+                "aoss:ListCollections",
+                "aoss:BatchGetCollection"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "BedrockKnowledgeBaseEmbeddings",
+            "Effect": "Allow",
+            "Action": [
+                "bedrock:InvokeModel"
+            ],
+            "Resource": [
+                "arn:aws:bedrock:'"$AWS_REGION"'::foundation-model/amazon.titan-embed-text-v1",
+                "arn:aws:bedrock:'"$AWS_REGION"'::foundation-model/amazon.titan-embed-text-v2:0"
+            ]
+        }
+    ]
 }'
 
-ARTIFACTS='{"type":"NO_ARTIFACTS"}'
-SOURCE='{"type":"GITHUB","location":"'"$GITHUB_URL"'"}'
+echo "Applying policy with full OpenSearch permissions..."
+run_aws iam put-role-policy \
+    --role-name "$KB_ROLE_NAME" \
+    --policy-name "${KB_ROLE_NAME}-policy" \
+    --policy-document "$KB_POLICY"
 
-echo "Configuring CodeBuild project: $CODEBUILD_PROJECT"
+echo "✅ KB role policy updated with full permissions"
+echo "   Waiting 10 seconds for IAM propagation..."
+sleep 10
 
-PROJECT_EXISTS=$(run_aws codebuild batch-get-projects --names "$CODEBUILD_PROJECT" --query 'projects[0].name' --output text 2>/dev/null || echo "")
-
-if [ "$PROJECT_EXISTS" = "$CODEBUILD_PROJECT" ]; then
-    echo "Updating existing project..."
-    run_aws codebuild update-project \
-        --name "$CODEBUILD_PROJECT" \
-        --source "$SOURCE" \
-        --artifacts "$ARTIFACTS" \
-        --environment "$ENVIRONMENT_CONFIG" \
-        --service-role "$CODEBUILD_ROLE_ARN" \
-        --no-cli-pager >/dev/null
+# Agent Role
+if run_aws iam get-role --role-name "$AGENT_ROLE_NAME" >/dev/null 2>&1; then
+    echo "⚠️  Agent role already exists - updating policy..."
+    AGENT_ROLE_ARN=$(run_aws iam get-role --role-name "$AGENT_ROLE_NAME" --query 'Role.Arn' --output text)
 else
-    echo "Creating new project..."
-    run_aws codebuild create-project \
-        --name "$CODEBUILD_PROJECT" \
-        --source "$SOURCE" \
-        --artifacts "$ARTIFACTS" \
-        --environment "$ENVIRONMENT_CONFIG" \
-        --service-role "$CODEBUILD_ROLE_ARN" \
-        --no-cli-pager >/dev/null
-fi
-
-echo "✅ CodeBuild project configured"
-echo ""
-
-# --------------------------------------------------
-# 9. Start Build
-# --------------------------------------------------
-
-echo "🚀 Step 8: Starting Deployment Build"
-echo "====================================="
-echo ""
-
-BUILD_RESULT=$(run_aws codebuild start-build \
-    --project-name "$CODEBUILD_PROJECT" \
-    --no-cli-pager \
-    --output json)
-
-if [ "$HAS_JQ" = true ]; then
-    BUILD_ID=$(echo "$BUILD_RESULT" | jq -r '.build.id')
-else
-    BUILD_ID=$(echo "$BUILD_RESULT" | grep -o '"id"[^"]*"[^"]*"' | head -1 | cut -d'"' -f4)
-fi
-
-echo "✅ Build started: $BUILD_ID"
-echo ""
-
-BUILD_URL="https://$AWS_REGION.console.aws.amazon.com/codesuite/codebuild/$AWS_ACCOUNT/projects/$CODEBUILD_PROJECT/build/$BUILD_ID"
-echo "📊 Monitor build at:"
-echo "   $BUILD_URL"
-echo ""
-
-# --------------------------------------------------
-# 10. Monitor Build Progress
-# --------------------------------------------------
-
-read -rp "Monitor build progress? (y/n) [y]: " MONITOR
-MONITOR=$(printf '%s' "$MONITOR" | tr '[:upper:]' '[:lower:]')
-MONITOR=${MONITOR:-y}
-
-if [[ "$MONITOR" == "y" || "$MONITOR" == "yes" ]]; then
-    echo ""
-    echo "⏳ Monitoring build (may take 10-15 minutes)..."
-    echo ""
+    echo "Creating Agent IAM role..."
     
-    LAST_PHASE=""
-    while true; do
-        BUILD_INFO=$(run_aws codebuild batch-get-builds --ids "$BUILD_ID" --output json)
-        
-        if [ "$HAS_JQ" = true ]; then
-            BUILD_STATUS=$(echo "$BUILD_INFO" | jq -r '.builds[0].buildStatus')
-            CURRENT_PHASE=$(echo "$BUILD_INFO" | jq -r '.builds[0].currentPhase // "UNKNOWN"')
-        else
-            BUILD_STATUS=$(echo "$BUILD_INFO" | grep -o '"buildStatus"[^"]*"[^"]*"' | cut -d'"' -f4)
-            CURRENT_PHASE=$(echo "$BUILD_INFO" | grep -o '"currentPhase"[^"]*"[^"]*"' | cut -d'"' -f4 | head -1)
-        fi
-        
-        if [ "$CURRENT_PHASE" != "$LAST_PHASE" ] && [ "$CURRENT_PHASE" != "UNKNOWN" ] && [ -n "$CURRENT_PHASE" ]; then
-            echo "  📍 Phase: $CURRENT_PHASE ($(date '+%H:%M:%S'))"
-            LAST_PHASE="$CURRENT_PHASE"
-        fi
-        
-        case $BUILD_STATUS in
-            "IN_PROGRESS")
-                sleep 30
-                ;;
-            "SUCCEEDED")
-                echo ""
-                echo "🎉 ============================================="
-                if [ "$ACTION" = "destroy" ]; then
-                    echo "🎉 DESTRUCTION COMPLETED SUCCESSFULLY!"
-                else
-                    echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
-                fi
-                echo "🎉 ============================================="
-                echo ""
-                
-                if [ "$ACTION" = "deploy" ]; then
-                    echo "📥 Fetching deployment outputs..."
-                    sleep 5
-                    
-                    # Query individual stacks with correct output keys
-                    # Use aws directly instead of run_aws to avoid any scoping issues
-                    if [ "$IS_CLOUDSHELL" = true ]; then
-                        AWS_CMD="aws"
-                    else
-                        AWS_CMD="aws --profile $AWS_PROFILE"
-                    fi
-                    
-                    WS_URL=$($AWS_CMD cloudformation describe-stacks \
-                        --stack-name "WebSocketStack" \
-                        --query 'Stacks[0].Outputs[?OutputKey==`WebSocketURL`].OutputValue' \
-                        --output text 2>/dev/null || echo "Not available")
-                    
-                    REST_URL=$($AWS_CMD cloudformation describe-stacks \
-                        --stack-name "RestApiStack" \
-                        --query 'Stacks[0].Outputs[?OutputKey==`RestApiUrl`].OutputValue' \
-                        --output text 2>/dev/null || echo "Not available")
-                    
-                    FRONTEND_URL=$($AWS_CMD cloudformation describe-stacks \
-                        --stack-name "FrontendStack" \
-                        --query 'Stacks[0].Outputs[?OutputKey==`FrontendUrl`].OutputValue' \
-                        --output text 2>/dev/null || echo "Not available")
-                    
-                    CONVERSATIONS_TABLE=$($AWS_CMD cloudformation describe-stacks \
-                        --stack-name "PLTWChatbotDynamoDBStack" \
-                        --query 'Stacks[0].Outputs[?OutputKey==`ConversationsTableName`].OutputValue' \
-                        --output text 2>/dev/null || echo "Not available")
-                    
-                    CONNECTIONS_TABLE=$($AWS_CMD cloudformation describe-stacks \
-                        --stack-name "PLTWChatbotDynamoDBStack" \
-                        --query 'Stacks[0].Outputs[?OutputKey==`ConnectionsTableName`].OutputValue' \
-                        --output text 2>/dev/null || echo "Not available")
-                    
-                    USER_POOL_ID=$($AWS_CMD cloudformation describe-stacks \
-                        --stack-name "CognitoStack" \
-                        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
-                        --output text 2>/dev/null || echo "Not available")
-                    
-                    USER_POOL_CLIENT_ID=$($AWS_CMD cloudformation describe-stacks \
-                        --stack-name "CognitoStack" \
-                        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
-                        --output text 2>/dev/null || echo "Not available")
-                    
-                    ESCALATION_QUEUE_URL=$($AWS_CMD cloudformation describe-stacks \
-                        --stack-name "SQSStack" \
-                        --query 'Stacks[0].Outputs[?OutputKey==`EscalationQueueUrl`].OutputValue' \
-                        --output text 2>/dev/null || echo "Not available")
-                    
-                    echo ""
-                    echo "🌐 DEPLOYMENT URLS"
-                    echo "=================="
-                    echo "🖥️  Frontend:     $FRONTEND_URL"
-                    echo "🔌 WebSocket:    $WS_URL"
-                    echo "🔗 REST API:     $REST_URL"
-                    echo ""
-                    echo "📊 RESOURCES"
-                    echo "============"
-                    echo "💾 Conversations Table: $CONVERSATIONS_TABLE"
-                    echo "💾 Connections Table:   $CONNECTIONS_TABLE"
-                    echo "📬 Escalation Queue:    $ESCALATION_QUEUE_URL"
-                    echo ""
-                    echo "🔐 COGNITO"
-                    echo "=========="
-                    echo "👤 User Pool ID:        $USER_POOL_ID"
-                    echo "🔑 User Pool Client ID: $USER_POOL_CLIENT_ID"
-                    echo ""
-                    echo "📝 NEXT STEPS"
-                    echo "============="
-                    echo "1. Create admin user in Cognito:"
-                    if [ "$IS_CLOUDSHELL" = true ]; then
-                        echo "   aws cognito-idp admin-create-user \\"
-                        echo "     --user-pool-id $USER_POOL_ID \\"
-                        echo "     --username admin@example.com \\"
-                        echo "     --user-attributes Name=email,Value=admin@example.com \\"
-                        echo "     --temporary-password 'TempPass123!'"
-                    else
-                        echo "   aws cognito-idp admin-create-user \\"
-                        echo "     --user-pool-id $USER_POOL_ID \\"
-                        echo "     --username admin@example.com \\"
-                        echo "     --user-attributes Name=email,Value=admin@example.com \\"
-                        echo "     --temporary-password 'TempPass123!' \\"
-                        echo "     --profile $AWS_PROFILE"
-                    fi
-                    echo ""
-                    echo "2. Test application: $FRONTEND_URL"
-                    echo ""
-                    echo "3. Monitor logs:"
-                    if [ "$IS_CLOUDSHELL" = true ]; then
-                        echo "   aws logs tail /aws/lambda/sendMessage --follow"
-                    else
-                        echo "   aws logs tail /aws/lambda/sendMessage --follow --profile $AWS_PROFILE"
-                    fi
-                    echo ""
-                    
-                    # Save outputs
-                    OUTPUT_FILE=".deployment-outputs-${ENVIRONMENT}.txt"
-                    cat > "$OUTPUT_FILE" <<EOF
-# PLTW Chatbot Deployment Outputs
-# Environment: $ENVIRONMENT
-# Deployed: $(date)
+    AGENT_TRUST_POLICY='{
+        "Version": "2012-10-17",
+        "Statement": [{
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "bedrock.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole",
+            "Condition": {
+                "StringEquals": {
+                    "aws:SourceAccount": "'"$AWS_ACCOUNT"'"
+                },
+                "ArnLike": {
+                    "aws:SourceArn": "arn:aws:bedrock:'"$AWS_REGION"':'"$AWS_ACCOUNT"':agent/*"
+                }
+            }
+        }]
+    }'
+    
+    AGENT_ROLE_ARN=$(run_aws iam create-role \
+        --role-name "$AGENT_ROLE_NAME" \
+        --assume-role-policy-document "$AGENT_TRUST_POLICY" \
+        --query 'Role.Arn' \
+        --output text)
+    
+    echo "✅ Agent role created: $AGENT_ROLE_ARN"
+fi
 
-# URLs
-FRONTEND_URL=$FRONTEND_URL
-WEBSOCKET_URL=$WS_URL
-REST_API_URL=$REST_URL
+# UPDATED POLICY - Broader permissions for cross-region inference and all model variants
+AGENT_POLICY='{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "BedrockModelInvocation",
+            "Effect": "Allow",
+            "Action": [
+                "bedrock:InvokeModel",
+                "bedrock:InvokeModelWithResponseStream",
+                "bedrock:GetFoundationModel"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "BedrockKnowledgeBaseAccess",
+            "Effect": "Allow",
+            "Action": [
+                "bedrock:Retrieve",
+                "bedrock:RetrieveAndGenerate",
+                "bedrock:ListKnowledgeBases"
+            ],
+            "Resource": "*"
+        }
+    ]
+}'
 
-# DynamoDB Tables
-CONVERSATIONS_TABLE=$CONVERSATIONS_TABLE
-CONNECTIONS_TABLE=$CONNECTIONS_TABLE
+echo "Applying broader Agent role policy..."
+run_aws iam put-role-policy \
+    --role-name "$AGENT_ROLE_NAME" \
+    --policy-name "${AGENT_ROLE_NAME}-policy" \
+    --policy-document "$AGENT_POLICY"
 
-# SQS
-ESCALATION_QUEUE_URL=$ESCALATION_QUEUE_URL
+echo "✅ Agent role policy updated with broader permissions"
+echo "   Waiting 10 seconds for IAM propagation..."
+sleep 10
 
-# Cognito
-USER_POOL_ID=$USER_POOL_ID
-USER_POOL_CLIENT_ID=$USER_POOL_CLIENT_ID
+echo ""
+
+# --------------------------------------------------
+# 3. Knowledge Base (Manual Step)
+# --------------------------------------------------
+
+echo "📚 Step 3: Create Knowledge Base (Manual)"
+echo "=========================================="
+echo ""
+echo "Please create the Knowledge Base manually in the AWS Console:"
+echo ""
+echo "1. Go to: https://console.aws.amazon.com/bedrock/home?region=$AWS_REGION#/knowledge-bases"
+echo ""
+echo "2. Click 'Create knowledge base'"
+echo ""
+echo "3. Configure:"
+echo "   • Name: $KB_NAME"
+echo "   • IAM Role: Use existing → $KB_ROLE_NAME"
+echo "   • Data source: S3"
+echo "   • S3 URI: s3://$BUCKET_NAME/"
+echo "   • Vector store: Quick create (OpenSearch Serverless)"
+echo "   • Embeddings model: Amazon Titan Embeddings G1 - Text v1"
+echo ""
+echo "4. After creation, note down:"
+echo "   • Knowledge Base ID (starts with 'KB')"
+echo "   • Data Source ID (under Data sources tab)"
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+read -rp "Press Enter after you've created the Knowledge Base..."
+echo ""
+
+# Collect IDs
+echo "Please enter the IDs from the console:"
+echo ""
+read -rp "Knowledge Base ID: " KB_ID
+read -rp "Data Source ID: " DATA_SOURCE_ID
+echo ""
+
+if [ -z "$KB_ID" ] || [ -z "$DATA_SOURCE_ID" ]; then
+    echo "❌ Knowledge Base ID and Data Source ID are required"
+    exit 1
+fi
+
+echo "✅ Knowledge Base: $KB_ID"
+echo "✅ Data Source: $DATA_SOURCE_ID"
+echo ""
+
+# --------------------------------------------------
+# 4. Create Bedrock Agent
+# --------------------------------------------------
+
+echo "🤖 Step 4: Creating Bedrock Agent (Nova Pro)"
+echo "============================================="
+echo ""
+
+# Your exact agent instructions
+AGENT_INSTRUCTION='# MISSION
+You are Jordan, a Customer-Centric Support Assistant for Project Lead The Way (PLTW). 
+Your goal is to provide US PreK-12 educators (teachers, admins, CTE directors) with 
+immediate, actionable Tier-1 support to reduce the volume of inquiries to the 
+Solution Center.
+
+# CONTEXT & SCOPE
+Always prioritize the PLTW mission: Empowering teachers to inspire students through 
+real-world applied learning. You assist with:
+- Implementation & Curriculum
+- Professional Development
+- Rostering & Account Management
+- Assessments, Grading, Payment, and Grants
+
+# OPERATIONAL RULES
+1. TONE: Maintain a "Very Pleasant" and "Friendly" demeanor. 
+   - Example: Start with "Thank you for that question!" or "I'\''d be happy to help you with that."
+2. REASONING: Before answering, use <thinking> tags to plan your response based on the knowledge base.
+3. CITATIONS: 
+   - For website-based info: Always provide the link.
+   - For PDF-based info: Summarize clearly but DO NOT provide a link.
+4. ESCALATION: If the knowledge base does not contain the answer, or if the user is 
+   unsatisfied, provide this EXACT contact info: 
+   "Please contact the PLTW Solution Center at 877.335.7589 or [solutioncenter@pltw.org](mailto:solutioncenter@pltw.org)." 
+
+# KNOWLEDGE BASE UTILIZATION
+### Primary Sources:
+- Main Site: [https://www.pltw.org](https://www.pltw.org)
+- Technical/Software: [https://knowledge.pltw.org/s/](https://knowledge.pltw.org/s/)
+- Curriculum: [https://www.pltw.org/curriculum](https://www.pltw.org/curriculum)
+
+### Handling Constraints:
+- Only answer based on the provided Knowledge Base.
+- Do not make up external links or resources.
+- If a query is outside the PLTW scope, politely redirect them back to PLTW topics.
+
+# OUTPUT FORMATTING
+- Use headers and bullet points for scannability.
+- Use bold text for key steps or deadlines.
+- Always include a "Next Steps" section at the end of helpful responses.'
+
+EXISTING_AGENT=$(run_aws bedrock-agent list-agents \
+    --query "agentSummaries[?agentName=='$AGENT_NAME'].agentId" \
+    --output text 2>/dev/null || echo "")
+
+if [ -n "$EXISTING_AGENT" ]; then
+    echo "✅ Agent already exists"
+    AGENT_ID="$EXISTING_AGENT"
+else
+    echo "Creating Bedrock Agent with Nova Pro..."
+    
+    AGENT_RESULT=$(run_aws bedrock-agent create-agent \
+        --agent-name "$AGENT_NAME" \
+        --agent-resource-role-arn "$AGENT_ROLE_ARN" \
+        --foundation-model "us.amazon.nova-pro-v1:0" \
+        --instruction "$AGENT_INSTRUCTION" \
+        --description "PLTW Support Assistant - Jordan" \
+        --idle-session-ttl-in-seconds 600 \
+        --output json)
+    
+    AGENT_ID=$(echo "$AGENT_RESULT" | grep -o '"agentId"[^"]*"[^"]*"' | cut -d'"' -f4)
+    
+    echo "✅ Agent created: $AGENT_ID"
+fi
+
+# Associate KB with Agent
+echo "Associating Knowledge Base with Agent..."
+run_aws bedrock-agent associate-agent-knowledge-base \
+    --agent-id "$AGENT_ID" \
+    --agent-version "DRAFT" \
+    --knowledge-base-id "$KB_ID" \
+    --description "PLTW documentation knowledge base" \
+    --knowledge-base-state "ENABLED" \
+    2>/dev/null || echo "⚠️  Knowledge Base may already be associated"
+
+echo "✅ Knowledge Base associated"
+echo ""
+
+# --------------------------------------------------
+# 5. Prepare and Create Alias
+# --------------------------------------------------
+
+echo "🔧 Step 5: Preparing Agent"
+echo "=========================="
+echo ""
+
+echo "Preparing agent..."
+run_aws bedrock-agent prepare-agent --agent-id "$AGENT_ID" >/dev/null
+echo "⏳ Waiting for preparation (15 seconds)..."
+sleep 15
+
+# Create prod alias
+echo "Creating 'prod' alias..."
+PROD_ALIAS_RESULT=$(run_aws bedrock-agent create-agent-alias \
+    --agent-id "$AGENT_ID" \
+    --agent-alias-name "prod" \
+    --description "Production alias" \
+    --output json 2>/dev/null || echo '{"agentAlias":{"agentAliasId":"existing"}}')
+
+AGENT_ALIAS_ID=$(echo "$PROD_ALIAS_RESULT" | grep -o '"agentAliasId"[^"]*"[^"]*"' | cut -d'"' -f4)
+
+if [ "$AGENT_ALIAS_ID" != "existing" ]; then
+    echo "✅ Prod alias created: $AGENT_ALIAS_ID"
+else
+    AGENT_ALIAS_ID=$(run_aws bedrock-agent list-agent-aliases \
+        --agent-id "$AGENT_ID" \
+        --query "agentAliasSummaries[?agentAliasName=='prod'].agentAliasId" \
+        --output text)
+    echo "✅ Using existing prod alias: $AGENT_ALIAS_ID"
+fi
+
+echo ""
+
+# --------------------------------------------------
+# 6. Save Configuration
+# --------------------------------------------------
+
+echo "💾 Step 6: Saving Configuration"
+echo "================================"
+echo ""
+
+ENV_FILE=".env"
+cat > "$ENV_FILE" <<EOF
+# PLTW Bedrock Configuration
+# Generated: $(date)
 
 # AWS
+CDK_DEFAULT_REGION=$AWS_REGION
 AWS_ACCOUNT=$AWS_ACCOUNT
-AWS_REGION=$AWS_REGION
+
+# S3
+S3_BUCKET=$BUCKET_NAME
+
+# Knowledge Base
+BEDROCK_KB_ID=$KB_ID
+BEDROCK_DATA_SOURCE_ID=$DATA_SOURCE_ID
+
+# Bedrock Agent (Nova Pro)
+BEDROCK_AGENT_ID=$AGENT_ID
+BEDROCK_AGENT_ALIAS_ID=$AGENT_ALIAS_ID
+AGENT_NAME=$AGENT_NAME
+FOUNDATION_MODEL=us.amazon.nova-pro-v1:0
+
+# IAM Roles
+KB_ROLE_ARN=$KB_ROLE_ARN
+AGENT_ROLE_ARN=$AGENT_ROLE_ARN
+
+# Vector Storage
+VECTOR_STORAGE=OPENSEARCH_SERVERLESS
 EOF
-                    echo "✅ Outputs saved to: $OUTPUT_FILE"
-                fi
-                break
-                ;;
-            "FAILED"|"FAULT"|"TIMED_OUT"|"STOPPED")
-                echo ""
-                echo "❌ BUILD $BUILD_STATUS!"
-                echo ""
-                echo "Check logs at: $BUILD_URL"
-                exit 1
-                ;;
-            *)
-                sleep 30
-                ;;
-        esac
-    done
-fi
 
+echo "✅ Configuration saved to: $ENV_FILE"
 echo ""
+
+if [ -d "infrastructure/cdk" ]; then
+    cp "$ENV_FILE" "infrastructure/cdk/.env"
+    echo "✅ Also saved to: infrastructure/cdk/.env"
+    echo ""
+fi
 
 # --------------------------------------------------
-# 11. Cleanup Options (for destroy)
+# 7. Summary
 # --------------------------------------------------
 
-if [ "$ACTION" = "destroy" ]; then
-    echo ""
-    echo "📋 Post-Destroy Cleanup Options"
-    echo "================================"
-    echo ""
-    
-    # Set AWS_CMD if not already set
-    if [ "$IS_CLOUDSHELL" = true ]; then
-        AWS_CMD="aws"
-    else
-        AWS_CMD="aws --profile $AWS_PROFILE"
-    fi
-    
-    read -rp "Delete CodeBuild project and role? (y/n) [n]: " CLEANUP
-    CLEANUP=$(printf '%s' "$CLEANUP" | tr '[:upper:]' '[:lower:]')
-    
-    if [[ "$CLEANUP" == "y" || "$CLEANUP" == "yes" ]]; then
-        echo "Deleting CodeBuild project..."
-        $AWS_CMD codebuild delete-project --name "$CODEBUILD_PROJECT" 2>/dev/null || echo "  Already deleted"
-        
-        echo "Deleting CodeBuild role..."
-        $AWS_CMD iam detach-role-policy --role-name "$CODEBUILD_ROLE_NAME" --policy-arn arn:aws:iam::aws:policy/AdministratorAccess 2>/dev/null || true
-        $AWS_CMD iam delete-role --role-name "$CODEBUILD_ROLE_NAME" 2>/dev/null || echo "  Already deleted"
-        
-        echo "✅ CodeBuild cleanup completed"
-    fi
-    
-    echo ""
-    echo "⚠️  Note: The CDK destroy should have deleted the CloudFormation stacks."
-    echo "   If any stacks remain, you can manually delete them:"
-    echo ""
-    echo "   Stacks to check:"
-    echo "   - WebSocketStack"
-    echo "   - RestApiStack"
-    echo "   - FrontendStack"
-    echo "   - CognitoStack"
-    echo "   - PLTWChatbotDynamoDBStack"
-    echo "   - SQSStack"
-    echo ""
-    echo "   To delete manually:"
-    if [ "$IS_CLOUDSHELL" = true ]; then
-        echo "   aws cloudformation delete-stack --stack-name <STACK_NAME>"
-    else
-        echo "   aws cloudformation delete-stack --stack-name <STACK_NAME> --profile $AWS_PROFILE"
-    fi
-    echo ""
-    echo "   ⚠️  For S3 buckets, empty them first before deleting the stack:"
-    if [ "$IS_CLOUDSHELL" = true ]; then
-        echo "   aws s3 rm s3://pltw-chatbot-frontend-$AWS_ACCOUNT --recursive"
-    else
-        echo "   aws s3 rm s3://pltw-chatbot-frontend-$AWS_ACCOUNT --recursive --profile $AWS_PROFILE"
-    fi
-fi
-
+echo "🎉 =============================================="
+echo "🎉 SETUP COMPLETED SUCCESSFULLY!"
+echo "🎉 =============================================="
 echo ""
-echo "🎯 ============================================="
-echo "🎯 DEPLOYMENT SCRIPT COMPLETED!"
-echo "🎯 ============================================="
+echo "📋 Resources Created:"
+echo "===================="
 echo ""
-
-if [ "$ACTION" = "deploy" ]; then
-    echo "📚 Useful Commands:"
-    echo ""
-    if [ "$IS_CLOUDSHELL" = true ]; then
-        echo "  View stacks:"
-        echo "    aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE"
-        echo ""
-        echo "  Monitor logs:"
-        echo "    aws logs tail /aws/lambda/sendMessage --follow"
-    else
-        echo "  View stacks:"
-        echo "    aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE --profile $AWS_PROFILE"
-        echo ""
-        echo "  Monitor logs:"
-        echo "    aws logs tail /aws/lambda/sendMessage --follow --profile $AWS_PROFILE"
-    fi
-fi
-
+echo "S3 Bucket:"
+echo "  Name: $BUCKET_NAME"
+echo "  URL:  https://s3.console.aws.amazon.com/s3/buckets/$BUCKET_NAME"
 echo ""
-echo "✅ Done!"
+echo "Knowledge Base:"
+echo "  ID:   $KB_ID"
+echo "  Storage: OpenSearch Serverless (Quick Create)"
+echo "  Model: Amazon Titan Embeddings G1 - Text v1"
+echo "  URL:  https://console.aws.amazon.com/bedrock/home?region=$AWS_REGION#/knowledge-bases/$KB_ID"
+echo ""
+echo "Bedrock Agent:"
+echo "  ID:    $AGENT_ID"
+echo "  Name:  $AGENT_NAME"
+echo "  Model: Amazon Nova Pro v1"
+echo "  Alias: $AGENT_ALIAS_ID (prod)"
+echo "  URL:   https://console.aws.amazon.com/bedrock/home?region=$AWS_REGION#/agents/$AGENT_ID"
+echo ""
+echo "IAM Roles:"
+echo "  KB Role:    $KB_ROLE_NAME (with full OpenSearch permissions)"
+echo "  Agent Role: $AGENT_ROLE_NAME (with broader Bedrock permissions)"
+echo ""
+echo "✅ Full OpenSearch Serverless permissions configured!"
+echo "✅ Broader Agent permissions for cross-region model inference!"
+echo ""
+echo "📝 Next Steps:"
+echo "=============="
+echo ""
+echo "1. Upload your PLTW documentation to S3:"
+echo "   aws s3 cp ./docs/ s3://$BUCKET_NAME/ --recursive"
+echo ""
+echo "2. Start ingestion job:"
+echo "   aws bedrock-agent start-ingestion-job \\"
+echo "     --knowledge-base-id $KB_ID \\"
+echo "     --data-source-id $DATA_SOURCE_ID"
+echo ""
+echo "3. Monitor ingestion:"
+echo "   aws bedrock-agent list-ingestion-jobs \\"
+echo "     --knowledge-base-id $KB_ID \\"
+echo "     --data-source-id $DATA_SOURCE_ID"
+echo ""
+echo "4. Test the agent:"
+echo "   aws bedrock-agent-runtime invoke-agent \\"
+echo "     --agent-id $AGENT_ID \\"
+echo "     --agent-alias-id $AGENT_ALIAS_ID \\"
+echo "     --session-id test-123 \\"
+echo "     --input-text \"What is PLTW?\" \\"
+echo "     response.txt"
+echo ""
+echo "5. View response:"
+echo "   cat response.txt"
+echo ""
+echo "6. Use in deployment:"
+echo "   cd infrastructure/cdk"
+echo "   export \$(cat .env | xargs)"
+echo "   cdk deploy"
+echo ""
+echo "✅ All done! Configuration saved in .env file"
+echo ""
