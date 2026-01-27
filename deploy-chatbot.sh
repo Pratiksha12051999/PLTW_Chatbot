@@ -219,7 +219,7 @@ sleep 10
 
 # Agent Role
 if run_aws iam get-role --role-name "$AGENT_ROLE_NAME" >/dev/null 2>&1; then
-    echo "✅ Agent role already exists"
+    echo "⚠️  Agent role already exists - updating policy..."
     AGENT_ROLE_ARN=$(run_aws iam get-role --role-name "$AGENT_ROLE_NAME" --query 'Role.Arn' --output text)
 else
     echo "Creating Agent IAM role..."
@@ -249,88 +249,71 @@ else
         --query 'Role.Arn' \
         --output text)
     
-    # Policy for Nova Pro
-    AGENT_POLICY='{
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "bedrock:InvokeModel"
-                ],
-                "Resource": [
-                    "arn:aws:bedrock:'"$AWS_REGION"'::foundation-model/amazon.nova-pro-v1:0",
-                    "arn:aws:bedrock:'"$AWS_REGION"'::foundation-model/us.amazon.nova-pro-v1:0"
-                ]
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "bedrock:Retrieve",
-                    "bedrock:RetrieveAndGenerate"
-                ],
-                "Resource": [
-                    "arn:aws:bedrock:'"$AWS_REGION"':'"$AWS_ACCOUNT"':knowledge-base/*"
-                ]
-            }
-        ]
-    }'
-    
-    run_aws iam put-role-policy \
-        --role-name "$AGENT_ROLE_NAME" \
-        --policy-name "${AGENT_ROLE_NAME}-policy" \
-        --policy-document "$AGENT_POLICY"
-    
     echo "✅ Agent role created: $AGENT_ROLE_ARN"
-    sleep 5
 fi
 
+# UPDATED POLICY - Broader permissions for cross-region inference and all model variants
+AGENT_POLICY='{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "BedrockModelInvocation",
+            "Effect": "Allow",
+            "Action": [
+                "bedrock:InvokeModel",
+                "bedrock:InvokeModelWithResponseStream",
+                "bedrock:GetFoundationModel"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "BedrockKnowledgeBaseAccess",
+            "Effect": "Allow",
+            "Action": [
+                "bedrock:Retrieve",
+                "bedrock:RetrieveAndGenerate",
+                "bedrock:ListKnowledgeBases"
+            ],
+            "Resource": "*"
+        }
+    ]
+}'
+
+echo "Applying broader Agent role policy..."
+run_aws iam put-role-policy \
+    --role-name "$AGENT_ROLE_NAME" \
+    --policy-name "${AGENT_ROLE_NAME}-policy" \
+    --policy-document "$AGENT_POLICY"
+
+echo "✅ Agent role policy updated with broader permissions"
+echo "   Waiting 10 seconds for IAM propagation..."
+sleep 10
+
 echo ""
 
 # --------------------------------------------------
-# 3. Create Knowledge Base via Console
+# 3. Knowledge Base (Manual Step)
 # --------------------------------------------------
 
-echo "📚 Step 3: Create Knowledge Base via Console"
-echo "============================================="
+echo "📚 Step 3: Create Knowledge Base (Manual)"
+echo "=========================================="
 echo ""
-
-echo "✅ IAM role now has full OpenSearch Serverless permissions!"
-echo "   You can now use 'Quick create a new vector store' without errors"
+echo "Please create the Knowledge Base manually in the AWS Console:"
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "📋 Instructions:"
-echo ""
-echo "1. Open Bedrock Console:"
-echo "   https://console.aws.amazon.com/bedrock/home?region=$AWS_REGION#/knowledge-bases"
+echo "1. Go to: https://console.aws.amazon.com/bedrock/home?region=$AWS_REGION#/knowledge-bases"
 echo ""
 echo "2. Click 'Create knowledge base'"
 echo ""
 echo "3. Configure:"
-echo "   Name:        $KB_NAME"
-echo "   Description: PLTW support documentation"
-echo ""
-echo "4. For IAM role:"
-echo "   • Select 'Use an existing service role'"
-echo "   • Choose: $KB_ROLE_NAME"
-echo "   • ✅ Now has full OpenSearch permissions!"
-echo ""
-echo "5. For data source:"
-echo "   • Type: S3"
+echo "   • Name: $KB_NAME"
+echo "   • IAM Role: Use existing → $KB_ROLE_NAME"
+echo "   • Data source: S3"
 echo "   • S3 URI: s3://$BUCKET_NAME/"
+echo "   • Vector store: Quick create (OpenSearch Serverless)"
+echo "   • Embeddings model: Amazon Titan Embeddings G1 - Text v1"
 echo ""
-echo "6. For embedding model:"
-echo "   • Select: Titan Embeddings G1 - Text (v1)"
-echo ""
-echo "7. For vector database:"
-echo "   • Select: 'Quick create a new vector store - Recommended'"
-echo "   • ✅ Should work without 403 errors now!"
-echo ""
-echo "8. Click 'Create knowledge base'"
-echo ""
-echo "9. After creation, click into the KB and note:"
-echo "   • Knowledge Base ID"
+echo "4. After creation, note down:"
+echo "   • Knowledge Base ID (starts with 'KB')"
 echo "   • Data Source ID (under Data sources tab)"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -554,9 +537,10 @@ echo "  URL:   https://console.aws.amazon.com/bedrock/home?region=$AWS_REGION#/a
 echo ""
 echo "IAM Roles:"
 echo "  KB Role:    $KB_ROLE_NAME (with full OpenSearch permissions)"
-echo "  Agent Role: $AGENT_ROLE_NAME"
+echo "  Agent Role: $AGENT_ROLE_NAME (with broader Bedrock permissions)"
 echo ""
 echo "✅ Full OpenSearch Serverless permissions configured!"
+echo "✅ Broader Agent permissions for cross-region model inference!"
 echo ""
 echo "📝 Next Steps:"
 echo "=============="
