@@ -199,9 +199,9 @@ Create an admin user for the dashboard:
    - Temporary password: a secure password
 5. Click **"Create user"**
 
-The user will reset their password on first login.
+Once the admin user is created, setup a permanent password for the admin to login
 
-### 3. Set Admin Password (Optional)
+### 3. Set Admin Password
 
 To set a permanent password directly:
 
