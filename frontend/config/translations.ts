@@ -99,6 +99,23 @@ export const translations = {
     
     // Sources/Citations
     sources: 'Sources',
+
+    // Clear chat
+    clearChat: 'Clear Chat',
+    clearConversationTitle: 'Clear Conversation?',
+    clearConversationMessage: 'Are you sure you want to clear this conversation? This action cannot be undone.',
+
+    // Queue status
+    inQueue: "You're in Queue!",
+    ticket: 'Ticket',
+    queuePosition: 'Queue Position',
+    estimatedWait: 'Estimated Wait',
+    minutes: 'minutes',
+    immediateAssistance: 'Need immediate assistance?',
+
+    // Escalation (additional)
+    escalationButton: '🆘 Connect with Human Agent',
+    escalationInfo: 'For more complex questions, you can talk to our support team or contact us directly:',
   },
   es: {
     // Header
@@ -193,6 +210,23 @@ export const translations = {
     
     // Sources/Citations
     sources: 'Fuentes',
+
+    // Clear chat
+    clearChat: 'Limpiar Chat',
+    clearConversationTitle: '¿Limpiar Conversación?',
+    clearConversationMessage: '¿Está seguro de que desea limpiar esta conversación? Esta acción no se puede deshacer.',
+
+    // Queue status
+    inQueue: '¡Estás en la Cola!',
+    ticket: 'Ticket',
+    queuePosition: 'Posición en la Cola',
+    estimatedWait: 'Tiempo de Espera Estimado',
+    minutes: 'minutos',
+    immediateAssistance: '¿Necesita asistencia inmediata?',
+
+    // Escalation (additional)
+    escalationButton: '🆘 Conectar con un Agente Humano',
+    escalationInfo: 'Para preguntas más complejas, puede hablar con nuestro equipo de soporte o contactarnos directamente:',
   }
 } as const;
 

@@ -303,8 +303,8 @@ export default function ChatWindow() {
             />
           </div>
           <div className="text-left">
-            <h1 className="text-xl font-semibold text-gray-900">Jordan</h1>
-            <p className="text-sm text-gray-600">PLTW Support Assistant</p>
+            <h1 className="text-xl font-semibold text-gray-900">{currentTranslations.appName}</h1>
+            <p className="text-sm text-gray-600">{currentTranslations.appSubtitle}</p>
           </div>
         </button>
 
@@ -337,7 +337,7 @@ export default function ChatWindow() {
       {showAdminLogin && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-8 max-w-md w-full mx-4">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Admin Login</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">{currentTranslations.loginTitle}</h2>
 
             <form onSubmit={handleLogin} className="space-y-4">
               {loginError && (
@@ -348,7 +348,7 @@ export default function ChatWindow() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Email
+                  {currentTranslations.emailLabel}
                 </label>
                 <input
                   type="email"
@@ -363,7 +363,7 @@ export default function ChatWindow() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Password
+                  {currentTranslations.passwordLabel}
                 </label>
                 <input
                   type="password"
@@ -383,14 +383,14 @@ export default function ChatWindow() {
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                   disabled={isLoggingIn}
                 >
-                  Cancel
+                  {currentTranslations.cancel}
                 </button>
                 <button
                   type="submit"
                   className="flex-1 px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 transition-colors disabled:opacity-50"
                   disabled={isLoggingIn}
                 >
-                  {isLoggingIn ? 'Logging in...' : 'Login'}
+                  {isLoggingIn ? currentTranslations.loggingIn : currentTranslations.login}
                 </button>
               </div>
             </form>
@@ -402,16 +402,16 @@ export default function ChatWindow() {
       {showClearConfirm && (
         <div className="fixed inset-0 bg-gray-900/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4 shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Clear Conversation?</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">{currentTranslations.clearConversationTitle}</h3>
             <p className="text-gray-600 mb-6">
-              Are you sure you want to clear this conversation? This action cannot be undone.
+              {currentTranslations.clearConversationMessage}
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowClearConfirm(false)}
                 className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
               >
-                Cancel
+                {currentTranslations.cancel}
               </button>
               <button
                 onClick={() => {
@@ -420,7 +420,7 @@ export default function ChatWindow() {
                 }}
                 className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
               >
-                Clear Chat
+                {currentTranslations.clearChat}
               </button>
             </div>
           </div>
@@ -489,23 +489,23 @@ export default function ChatWindow() {
                     <span className="text-white text-2xl font-bold">#{queueInfo.position}</span>
                   </div>
                   <div>
-                    <h4 className="font-semibold text-blue-900 text-xl">You&apos;re in Queue!</h4>
-                    <p className="text-sm text-blue-700">Ticket: {queueInfo.ticketId}</p>
+                    <h4 className="font-semibold text-blue-900 text-xl">{currentTranslations.inQueue}</h4>
+                    <p className="text-sm text-blue-700">{currentTranslations.ticket}: {queueInfo.ticketId}</p>
                   </div>
                 </div>
 
                 <div className="space-y-3 text-sm text-blue-800">
                   <div className="flex items-center justify-between py-2 border-b border-blue-200">
-                    <span className="font-medium">Queue Position:</span>
+                    <span className="font-medium">{currentTranslations.queuePosition}:</span>
                     <span className="text-lg font-bold">#{queueInfo.position}</span>
                   </div>
                   <div className="flex items-center justify-between py-2 border-b border-blue-200">
-                    <span className="font-medium">Estimated Wait:</span>
-                    <span className="text-lg font-bold">~{queueInfo.estimatedWait} minutes</span>
+                    <span className="font-medium">{currentTranslations.estimatedWait}:</span>
+                    <span className="text-lg font-bold">~{queueInfo.estimatedWait} {currentTranslations.minutes}</span>
                   </div>
 
                   <div className="mt-4 pt-4 border-t border-blue-200 bg-white rounded-lg p-4">
-                    <p className="font-semibold mb-3 text-blue-900">Need immediate assistance?</p>
+                    <p className="font-semibold mb-3 text-blue-900">{currentTranslations.immediateAssistance}</p>
                     <div className="space-y-2">
                       <a
                         href="tel:877-335-7589"
@@ -568,7 +568,7 @@ export default function ChatWindow() {
                                 ? 'text-gray-300 cursor-not-allowed'
                                 : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
                             }`}
-                          title="Helpful"
+                          title={currentTranslations.helpful}
                         >
                           <ThumbsUp className="w-4 h-4" />
                         </button>
@@ -581,7 +581,7 @@ export default function ChatWindow() {
                                 ? 'text-gray-300 cursor-not-allowed'
                                 : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
                             }`}
-                          title="Not helpful"
+                          title={currentTranslations.notHelpful}
                         >
                           <ThumbsDown className="w-4 h-4" />
                         </button>
@@ -608,23 +608,23 @@ export default function ChatWindow() {
             {/* Escalation Suggestion Banner */}
             {shouldEscalate && !isEscalated && contactInfo && (
               <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-5">
-                <h4 className="font-semibold text-yellow-900 mb-2 text-lg">Need Additional Help?</h4>
+                <h4 className="font-semibold text-yellow-900 mb-2 text-lg">{currentTranslations.needHelp}</h4>
                 <p className="text-sm text-yellow-800 mb-4">
-                  For more complex questions, you can talk to our support team or contact us directly:
+                  {currentTranslations.escalationInfo}
                 </p>
                 <div className="space-y-3">
                   <button
                     onClick={escalateToAgent}
                     className="w-full px-4 py-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors"
                   >
-                    🆘 Connect with Human Agent
+                    {currentTranslations.escalationButton}
                   </button>
                   <div className="text-sm space-y-1">
                     <p className="text-yellow-900 font-medium">
-                      📞 Phone: <a href={`tel:${contactInfo.phone}`} className="underline hover:text-yellow-700">{contactInfo.phone}</a>
+                      📞 {currentTranslations.phone}: <a href={`tel:${contactInfo.phone}`} className="underline hover:text-yellow-700">{contactInfo.phone}</a>
                     </p>
                     <p className="text-yellow-900 font-medium">
-                      ✉️ Email: <a href={`mailto:${contactInfo.email}`} className="underline hover:text-yellow-700">{contactInfo.email}</a>
+                      ✉️ {currentTranslations.email}: <a href={`mailto:${contactInfo.email}`} className="underline hover:text-yellow-700">{contactInfo.email}</a>
                     </p>
                   </div>
                 </div>
@@ -643,7 +643,7 @@ export default function ChatWindow() {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
-              placeholder="Ask a question..."
+              placeholder={currentTranslations.askQuestion}
               className="flex-1 px-4 py-3.5 text-base text-gray-900 placeholder-gray-400 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent"
               disabled={!isConnected}
             />
@@ -652,7 +652,7 @@ export default function ChatWindow() {
               onClick={() => handleSendMessage()}
               disabled={!inputMessage.trim() || !isConnected}
               className="p-3.5 bg-blue-900 text-white rounded-xl hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-md hover:shadow-lg"
-              title="Send message"
+              title={currentTranslations.sendMessage}
             >
               <Send className="w-5 h-5" />
             </button>
@@ -661,15 +661,15 @@ export default function ChatWindow() {
               <button
                 onClick={() => setShowClearConfirm(true)}
                 className="px-4 py-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-red-50 hover:text-red-600 transition-colors text-sm font-medium"
-                title="Clear conversation"
+                title={currentTranslations.clearChat}
               >
-                Clear Chat
+                {currentTranslations.clearChat}
               </button>
             )}
           </div>
 
           {!isConnected && (
-            <p className="text-sm text-red-600 mt-2 font-medium">Connecting to chat...</p>
+            <p className="text-sm text-red-600 mt-2 font-medium">{currentTranslations.connecting}</p>
           )}
         </div>
       </div>
