@@ -77,12 +77,12 @@ export const getMetrics = async (
     // Input validation for days parameter
     const daysParam = parseInt(event.queryStringParameters?.days || "7");
 
-    // Validate: Must be a number, between 1 and 90 days
-    if (isNaN(daysParam) || daysParam < 1 || daysParam > 90) {
+    // Validate: Must be a number, between 1 and 365 days (to support "All Time")
+    if (isNaN(daysParam) || daysParam < 1 || daysParam > 365) {
       return {
         statusCode: 400,
         headers: corsHeaders,
-        body: JSON.stringify({ error: "Invalid 'days' parameter. Must be between 1 and 90." }),
+        body: JSON.stringify({ error: "Invalid 'days' parameter. Must be between 1 and 365." }),
       };
     }
 
