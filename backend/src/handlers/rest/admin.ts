@@ -7,7 +7,7 @@ const dynamoDBService = new DynamoDBService();
 // CloudFront domain - update this to your actual CloudFront URL
 const FRONTEND_URL = process.env.FRONTEND_URL || "";
 
-// Proper CORS headers for CloudFront origin
+// Proper CORS headers for CloudFront origin + Security headers
 const corsHeaders = {
   "Content-Type": "application/json",
   "Access-Control-Allow-Origin": FRONTEND_URL,
@@ -15,6 +15,12 @@ const corsHeaders = {
     "Content-Type,Authorization,X-Requested-With,X-Api-Key",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
   "Access-Control-Allow-Credentials": "true",
+  // ← SECURITY: Additional security headers
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "X-XSS-Protection": "1; mode=block",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
 };
 
 /**
@@ -68,7 +74,19 @@ export const getMetrics = async (
   event: APIGatewayProxyEvent,
 ): Promise<APIGatewayProxyResult> => {
   try {
-    const days = parseInt(event.queryStringParameters?.days || "7");
+    // Input validation for days parameter
+    const daysParam = parseInt(event.queryStringParameters?.days || "7");
+
+    // Validate: Must be a number, between 1 and 90 days
+    if (isNaN(daysParam) || daysParam < 1 || daysParam > 90) {
+      return {
+        statusCode: 400,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: "Invalid 'days' parameter. Must be between 1 and 90." }),
+      };
+    }
+
+    const days = daysParam;
     const endTime = Date.now();
     const startTime = endTime - days * 24 * 60 * 60 * 1000;
 
@@ -140,7 +158,19 @@ export const getConversations = async (
   event: APIGatewayProxyEvent,
 ): Promise<APIGatewayProxyResult> => {
   try {
-    const limit = parseInt(event.queryStringParameters?.limit || "50");
+    // Input validation for limit parameter
+    const limitParam = parseInt(event.queryStringParameters?.limit || "50");
+
+    // Validate: Must be a number, between 1 and 1000
+    if (isNaN(limitParam) || limitParam < 1 || limitParam > 1000) {
+      return {
+        statusCode: 400,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: "Invalid 'limit' parameter. Must be between 1 and 1000." }),
+      };
+    }
+
+    const limit = limitParam;
 
     console.log(`Fetching up to ${limit} conversations`);
 

@@ -22,6 +22,9 @@ export class RestApiStack extends cdk.Stack {
 
     const { conversationsTable, userPool } = props;
 
+    // Get frontend URL from context or environment variable
+    const frontendUrl = this.node.tryGetContext('frontendUrl') || process.env.FRONTEND_URL || '';
+
     // 1. Admin Handler - handles /admin/metrics and /admin/conversations
     const adminHandler = new lambda.Function(this, "AdminHandler", {
       runtime: lambda.Runtime.NODEJS_20_X,
@@ -30,7 +33,7 @@ export class RestApiStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(30),
       environment: {
         CONVERSATIONS_TABLE: conversationsTable.tableName,
-        FRONTEND_URL: "*", // ← ADDED: Wildcard CORS for now (can make specific later)
+        FRONTEND_URL: frontendUrl, // ← SECURITY: Use specific frontend URL instead of wildcard
       },
     });
 
@@ -42,7 +45,7 @@ export class RestApiStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(10),
       environment: {
         CONVERSATIONS_TABLE: conversationsTable.tableName,
-        FRONTEND_URL: "*", // ← ADDED: Wildcard CORS for now
+        FRONTEND_URL: frontendUrl, // ← SECURITY: Use specific frontend URL instead of wildcard
       },
     });
 
@@ -100,9 +103,19 @@ export class RestApiStack extends cdk.Stack {
       restApiName: "pltw-chatbot-rest-api",
       description: "REST API for PLTW Chatbot Admin",
       defaultCorsPreflightOptions: {
-        allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: apigateway.Cors.ALL_METHODS,
-        allowHeaders: ["Content-Type", "Authorization"],
+        allowOrigins: frontendUrl ? [frontendUrl] : apigateway.Cors.ALL_ORIGINS, // ← SECURITY: Use specific origins when available
+        allowMethods: ["GET", "POST", "OPTIONS"], // ← SECURITY: Only allow needed methods
+        allowHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+        allowCredentials: true,
+      },
+      deployOptions: {
+        // ← SECURITY: Rate limiting configuration
+        throttlingRateLimit: 100, // requests per second
+        throttlingBurstLimit: 200, // burst capacity
+        tracingEnabled: true, // Enable X-Ray tracing for monitoring
+        loggingLevel: apigateway.MethodLoggingLevel.INFO,
+        dataTraceEnabled: false, // Don't log full request/response data
+        metricsEnabled: true,
       },
     });
 

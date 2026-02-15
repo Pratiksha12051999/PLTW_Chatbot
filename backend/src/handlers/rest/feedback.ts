@@ -6,7 +6,7 @@ const dynamoDBService = new DynamoDBService();
 // CloudFront domain
 const FRONTEND_URL = process.env.FRONTEND_URL || "";
 
-// Proper CORS headers
+// Proper CORS headers + Security headers
 const corsHeaders = {
   "Content-Type": "application/json",
   "Access-Control-Allow-Origin": FRONTEND_URL,
@@ -14,6 +14,12 @@ const corsHeaders = {
     "Content-Type,Authorization,X-Requested-With,X-Api-Key",
   "Access-Control-Allow-Methods": "POST,OPTIONS",
   "Access-Control-Allow-Credentials": "true",
+  // ← SECURITY: Additional security headers
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "X-XSS-Protection": "1; mode=block",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
 };
 
 export const handler = async (
@@ -40,13 +46,22 @@ export const handler = async (
 
   try {
     const body = JSON.parse(event.body || "{}");
-    const { conversationId, satisfaction } = body;
+    const { conversationId, satisfaction, comment } = body;
 
     if (!conversationId || !satisfaction) {
       return {
         statusCode: 400,
         headers: corsHeaders,
         body: JSON.stringify({ error: "Missing required fields" }),
+      };
+    }
+
+    // Validate conversationId format (UUID)
+    if (!/^[a-f0-9-]{36}$/i.test(conversationId)) {
+      return {
+        statusCode: 400,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: "Invalid conversation ID format" }),
       };
     }
 
@@ -58,14 +73,32 @@ export const handler = async (
       };
     }
 
+    // Validate comment length if provided (max 1000 characters)
+    if (comment && (typeof comment !== 'string' || comment.length > 1000)) {
+      return {
+        statusCode: 400,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: "Comment too long. Maximum 1000 characters." }),
+      };
+    }
+
     console.log(
       `Recording ${satisfaction} feedback for conversation ${conversationId}`,
     );
 
-    await dynamoDBService.updateConversation(conversationId, {
+    // Sanitize comment (remove control characters)
+    const sanitizedComment = comment?.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '');
+
+    const updates: any = {
       satisfaction,
       updatedAt: Date.now(),
-    });
+    };
+
+    if (sanitizedComment) {
+      updates.comment = sanitizedComment;
+    }
+
+    await dynamoDBService.updateConversation(conversationId, updates);
 
     return {
       statusCode: 200,

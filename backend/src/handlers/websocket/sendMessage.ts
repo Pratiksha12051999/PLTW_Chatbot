@@ -36,10 +36,41 @@ export const handler = async (
       language = "en",
     } = body;
 
+    // ========= INPUT VALIDATION & SANITIZATION =========
+    // Validate message length (max 5000 characters)
+    if (message && message.length > 5000) {
+      await wsService.sendMessage(connectionId, {
+        type: "error",
+        message: "Message too long. Maximum 5000 characters allowed.",
+      });
+      return { statusCode: 400, body: "Message too long" };
+    }
+
+    // Validate conversationId format (if provided)
+    if (existingConversationId && !/^[a-f0-9-]{36}$/i.test(existingConversationId)) {
+      await wsService.sendMessage(connectionId, {
+        type: "error",
+        message: "Invalid conversation ID format.",
+      });
+      return { statusCode: 400, body: "Invalid conversation ID" };
+    }
+
+    // Validate language parameter
+    if (language && !["en", "es"].includes(language)) {
+      await wsService.sendMessage(connectionId, {
+        type: "error",
+        message: "Invalid language. Supported: en, es.",
+      });
+      return { statusCode: 400, body: "Invalid language" };
+    }
+
+    // Sanitize message content (remove null bytes and control characters except newlines/tabs)
+    const sanitizedMessage = message?.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '') || '';
+
     console.log("📨 ===== INCOMING MESSAGE =====");
     console.log("📨 Connection ID:", connectionId);
     console.log("📨 Action:", action);
-    console.log("📨 Message:", message);
+    console.log("📨 Message length:", sanitizedMessage.length);
     console.log("📨 Conversation ID:", existingConversationId);
     console.log("📨 =============================");
 
@@ -82,7 +113,7 @@ export const handler = async (
       if (shouldCategorize) {
         categorizationService.categorizeConversationAsync(
           conversationId,
-          message!,
+          sanitizedMessage,
         );
       }
     }
@@ -93,7 +124,7 @@ export const handler = async (
     console.log("🚨 Message content:", message);
 
     const keywordEscalation = EscalationService.shouldEscalate(
-      message!,
+      sanitizedMessage,
       action,
     );
     console.log("🚨 Keyword escalation triggered:", keywordEscalation);
@@ -118,7 +149,7 @@ export const handler = async (
           conversationId,
           userId: connection.userId,
           category: (category as ConversationCategory) || "general",
-          userMessage: message!,
+          userMessage: sanitizedMessage,
           timestamp: Date.now(),
           contactInfo: EscalationService.getContactInfo(),
         };
@@ -209,7 +240,7 @@ export const handler = async (
     const userMessage: Message = {
       messageId: uuidv4(),
       conversationId,
-      content: message!,
+      content: sanitizedMessage,
       role: "user",
       timestamp: Date.now(),
     };
@@ -221,9 +252,9 @@ export const handler = async (
     });
 
     // Translate user message to English if Spanish is selected
-    let messageForBedrock = message!;
+    let messageForBedrock = sanitizedMessage;
     if (language === "es") {
-      messageForBedrock = await translateService.translateToEnglish(message!);
+      messageForBedrock = await translateService.translateToEnglish(sanitizedMessage);
       console.log(`Translated user message to English: ${messageForBedrock}`);
     }
 

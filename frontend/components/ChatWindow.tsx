@@ -11,7 +11,12 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import CitationDisplay from './CitationDisplay';
 
-const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'wss://q76me9fvqa.execute-api.us-east-1.amazonaws.com/prod';
+const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+
+// Validate WebSocket URL is configured
+if (!WEBSOCKET_URL) {
+  console.error('NEXT_PUBLIC_WEBSOCKET_URL environment variable is not configured');
+}
 
 // Clean text by removing content in square brackets
 const cleanText = (text: string): string => {
