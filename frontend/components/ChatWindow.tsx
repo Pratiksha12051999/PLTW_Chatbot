@@ -11,11 +11,12 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import CitationDisplay from './CitationDisplay';
 
-const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+// SECURITY: No hardcoded WebSocket URL - must be configured via environment variable
+const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL || '';
 
 // Validate WebSocket URL is configured
 if (!WEBSOCKET_URL) {
-  console.error('NEXT_PUBLIC_WEBSOCKET_URL environment variable is not configured');
+  console.error('CRITICAL: NEXT_PUBLIC_WEBSOCKET_URL environment variable is not configured');
 }
 
 // Clean text by removing content in square brackets
