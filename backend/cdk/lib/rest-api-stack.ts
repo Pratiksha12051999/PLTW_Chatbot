@@ -12,6 +12,7 @@ import * as path from "path";
 interface RestApiStackProps extends cdk.StackProps {
   conversationsTable: dynamodb.Table;
   userPool: cognito.IUserPool;
+  frontendUrl: string; // ← SECURITY: CloudFront URL for CORS
 }
 
 export class RestApiStack extends cdk.Stack {
@@ -20,10 +21,7 @@ export class RestApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: RestApiStackProps) {
     super(scope, id, props);
 
-    const { conversationsTable, userPool } = props;
-
-    // Get frontend URL from context or environment variable
-    const frontendUrl = this.node.tryGetContext('frontendUrl') || process.env.FRONTEND_URL || '';
+    const { conversationsTable, userPool, frontendUrl } = props;
 
     // 1. Admin Handler - handles /admin/metrics and /admin/conversations
     const adminHandler = new lambda.Function(this, "AdminHandler", {

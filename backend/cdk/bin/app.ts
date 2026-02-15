@@ -42,6 +42,14 @@ const sqsStack = new SQSStack(app, "SQSStack", {
   },
 });
 
+// Frontend Stack (S3 + CloudFront) - Create this first to get the URL
+const frontendStack = new FrontendStack(app, "FrontendStack", {
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION,
+  },
+});
+
 // WebSocket Stack
 const webSocketStack = new WebSocketStack(app, "WebSocketStack", {
   conversationsTable: dynamoDBStack.conversationsTable,
@@ -53,18 +61,11 @@ const webSocketStack = new WebSocketStack(app, "WebSocketStack", {
   },
 });
 
-// REST API Stack
+// REST API Stack - Now pass the frontend URL for CORS
 const restApiStack = new RestApiStack(app, "RestApiStack", {
   conversationsTable: dynamoDBStack.conversationsTable,
   userPool: cognitoStack.userPool,
-  env: {
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION,
-  },
-});
-
-// Frontend Stack (S3 + CloudFront)
-const frontendStack = new FrontendStack(app, "FrontendStack", {
+  frontendUrl: frontendStack.frontendUrl, // ← SECURITY: Pass CloudFront URL for CORS
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
