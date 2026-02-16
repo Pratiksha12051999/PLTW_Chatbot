@@ -4,8 +4,6 @@ An intelligent AI-powered customer support chatbot that helps US PreK-12 educato
 
 ## Demo Video
 
-https://github.com/user-attachments/assets/PLTW-Demo
-
 <video src="./docs/PLTW%20Demo.mp4" width="640" controls></video>
 
 ## Index
