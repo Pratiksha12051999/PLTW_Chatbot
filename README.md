@@ -8,6 +8,8 @@ An intelligent AI-powered customer support chatbot that helps US PreK-12 educato
   <img src="./docs/media/user-interface.gif" alt="PLTW Support Assistant Demo" width="640" />
 </p>
 
+**[📹 Watch Full Demo Video (PLTW Demo.mov)](./docs/PLTW%20Demo.mov)**
+
 ## Index
 
 | Description | Link |
